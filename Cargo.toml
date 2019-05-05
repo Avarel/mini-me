@@ -1,0 +1,8 @@
+[package]
+name = "multiline-console"
+version = "0.1.0"
+authors = ["Avarel <avarelpm@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+console = "0.7.5"
