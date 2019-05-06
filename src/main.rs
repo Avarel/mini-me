@@ -1,6 +1,20 @@
-use std::io::{self};
+use std::io;
 
 use console::{Term, Key};
+
+mod common_term;
+
+#[cfg(windows)]
+mod windows_term;
+
+#[cfg(unix)]
+mod unix_term;
+
+#[cfg(windows)]
+use windows_term::*;
+
+#[cfg(unix)]
+use unix_term::*;
 
 fn main() -> io::Result<()> {
     let mut prompt = MultilineTerm::stdout();
@@ -261,17 +275,23 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
         
         // Position the cursor.
         // At this point the cursor is pointed at the very end of the last line.
+        
         let last_len = self.buffers.last().unwrap().len();
         self.move_cursor_up(self.buffers.len() - self.line)?;
-        // self.move_cursor_left(last_len)?;
-        // self.move_cursor_right(self.index)?;
         if self.index < last_len {
             self.move_cursor_left(last_len - self.index)?;
         } else if self.index > last_len {
             // Not safe to use move_cursor_right because that method assumes
             // that the cursor is exactly at `line:index`, which is not what
             // the drawn cursor is at.
-            self.term.write_str(&self.current_line()[last_len..self.index])?;
+            #[cfg(not(unix))]
+            {
+                self.term.write_str(&self.current_line()[last_len..self.index])?;
+            }
+            #[cfg(unix)]
+            {
+                move_cursor_right(&self.term, self.index)?;
+            }
         }
 
         Ok(())
@@ -364,8 +384,15 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
 
     /// Move the cursor leftward using nondestructive backspaces.
     fn move_cursor_left(&self, n: usize) -> io::Result<usize> {
-        for _ in 0..n {
-            self.term.write_str("\x08")?;
+        #[cfg(unix)]
+        {
+            move_cursor_left(&self.term, n)?;
+        }
+        #[cfg(not(unix))]
+        {
+            for _ in 0..n {
+                self.term.write_str("\x08")?;
+            }
         }
         if self.index == 0 {
             Ok(0)
