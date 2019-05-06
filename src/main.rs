@@ -139,7 +139,7 @@ impl MultilineTerm {
                         self.buffers.insert(self.line, nbuf);
                         self.index = 0;
                         self.line += 1;
-                        
+
                         self.move_cursor_to_bottom()?;
                         if self.empty_padding == 0 {
                             self.term.write_line("")?;
@@ -274,11 +274,4 @@ impl MultilineTerm {
         self.term.clear_last_lines(self.buffers.len() - 1 + self.empty_padding)?;
         Ok(())
     }
-}
-
-struct Cursor {
-    /// Starts at 1
-    pub line: usize,
-    /// Starts at 0
-    pub index: usize,
 }
