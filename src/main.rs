@@ -2,19 +2,9 @@ use std::io;
 
 use console::{Term, Key};
 
-mod common_term;
+mod console_patch;
 
-#[cfg(windows)]
-mod windows_term;
-
-#[cfg(unix)]
-mod unix_term;
-
-#[cfg(windows)]
-use windows_term::*;
-
-#[cfg(unix)]
-use unix_term::*;
+use console_patch::*;
 
 fn main() -> io::Result<()> {
     let mut prompt = MultilineTerm::stdout();
@@ -129,7 +119,7 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
                         self.index = self.move_cursor_to_start()?;
                     }
                 }
-                Key::Char('\x7f') => {
+                Key::Char('\x7f') | Key::Char('\x08') => {
                     if self.buffers.is_empty() { continue }
                     if self.index > 0 {
                         self.index = self.delete_char_before_cursor();
@@ -151,6 +141,9 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
                     
                         self.redraw()?;
                     }
+                }
+                Key::Char('x') => {
+                    self.clear_draw()?;
                 }
                 Key::Char(c) => {
                     self.index = self.insert_char_before_cursor(c);
@@ -194,7 +187,11 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
                             // Move the cursor to the bottom in order to force a new line be
                             // printed so that the redraw don't draw over any other input.
                             self.move_cursor_to_bottom()?;
-                            self.new_line()?;
+                            #[cfg(unix)]
+                            {
+                                // Windows terminal force insert a new-line no matter what
+                                self.new_line()?;
+                            }
                         } else {
                             // The padding is created whenever there's an extra line
                             // created by backspacing at the beginning of a line and deleting it.
@@ -272,7 +269,7 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
                 self.new_line()?;
             }
         }
-        
+
         // Position the cursor.
         // At this point the cursor is pointed at the very end of the last line.
         
@@ -284,14 +281,14 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
             // Not safe to use move_cursor_right because that method assumes
             // that the cursor is exactly at `line:index`, which is not what
             // the drawn cursor is at.
-            #[cfg(not(unix))]
-            {
-                self.term.write_str(&self.current_line()[last_len..self.index])?;
-            }
-            #[cfg(unix)]
-            {
+            // #[cfg(not(unix))]
+            // {
+            //     self.term.write_str(&self.current_line()[last_len..self.index])?;
+            // }
+            // #[cfg(unix)]
+            // {
                 move_cursor_right(&self.term, self.index)?;
-            }
+            // }
         }
 
         Ok(())
@@ -301,7 +298,17 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
     fn clear_draw(&self) -> io::Result<()> {
         self.move_cursor_to_bottom()?;
         self.term.clear_line()?;
-        self.term.clear_last_lines(self.buffers.len() - 1 + self.empty_padding)?;
+        if self.buffers.len() != 0 {
+            #[cfg(windows)]
+            {
+                // Windows is REALLY weird about this.
+                self.term.clear_last_lines(self.buffers.len() + self.empty_padding)?;
+            }
+            #[cfg(unix)]
+            {
+                self.term.clear_last_lines(self.buffers.len() - 1 + self.empty_padding)?;
+            }
+        }
         Ok(())
     }
 
@@ -346,19 +353,19 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
     /// Move the current cursor to the last line.
     fn move_cursor_to_bottom(&self) -> io::Result<usize> {
         if self.buffers.len() == 0 { return Ok(0) }
-        self.term.move_cursor_down(self.buffers.len() - self.line + 1)?;
+        move_cursor_down(&self.term, self.buffers.len() - self.line + 1)?;
         Ok(self.buffers.len())
     }
 
     /// Move the cursor one line up.
     fn move_cursor_up(&self, n: usize) -> io::Result<usize> {
-        self.term.move_cursor_up(n)?;
+        move_cursor_up(&self.term, n)?;
         Ok(self.line - 1)
     }
 
     /// Move the cursor one line down.
     fn move_cursor_down(&self, n: usize) -> io::Result<usize> {
-        self.term.move_cursor_down(n)?;
+        move_cursor_down(&self.term, n)?;
         Ok(self.line + 1)
     }
 
@@ -384,16 +391,7 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
 
     /// Move the cursor leftward using nondestructive backspaces.
     fn move_cursor_left(&self, n: usize) -> io::Result<usize> {
-        #[cfg(unix)]
-        {
-            move_cursor_left(&self.term, n)?;
-        }
-        #[cfg(not(unix))]
-        {
-            for _ in 0..n {
-                self.term.write_str("\x08")?;
-            }
-        }
+        move_cursor_left(&self.term, n)?;
         if self.index == 0 {
             Ok(0)
         } else {
