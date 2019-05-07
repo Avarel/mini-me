@@ -91,7 +91,7 @@ impl MultilineTerm {
                     if self.buffers.is_empty() { continue }
                     if self.index > 0 {
                         self.index = self.delete_char_before_cursor();
-                        self.redraw()?;
+                        self.redraw_current_line()?;
                     } else if self.line > 0 {
                         // Backspace at the beginning of the line, so push the contents of
                         // the current line to the line above it, and remove the line.
