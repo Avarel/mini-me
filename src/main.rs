@@ -180,21 +180,7 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
                         self.index = 0;
                         self.line += 1;
 
-                        if self.empty_padding == 0 {
-                            // If theres no padding to take up:
-                            // Move the cursor to the bottom in order to force a new line be
-                            // printed so that the redraw don't draw over any other input.
-                            #[cfg(unix)] {
-                                self.move_cursor_to_bottom()?;
-                                self.new_line()?;
-                            }
-                            // Windows terminal force insert a new-line no matter what and is weird
-                        } else {
-                            // The padding is created whenever there's an extra line
-                            // created by backspacing at the beginning of a line and deleting it.
-                            // The padding is so that the typing experience still flows nicely.
-                            // If there is already padding, then the new line will just take it up
-                            // instead of creating another line
+                        if self.empty_padding != 0 {
                             self.empty_padding -= 1;
                         }
 
@@ -269,7 +255,6 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
 
         // Position the cursor.
         // At this point the cursor is pointed at the very end of the last line.
-        
         let last_len = self.buffers.last().unwrap().len();
         self.move_cursor_up(self.buffers.len() - self.line - 1)?;
         if self.index < last_len {
@@ -287,15 +272,6 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
         self.term.clear_line()?;
         if self.buffers.len() != 0 {
             self.term.clear_last_lines(self.buffers.len() - 1 + self.empty_padding)?;
-            // #[cfg(windows)]
-            // {
-            //     // Windows is REALLY weird about this.
-            //     self.term.clear_last_lines(self.buffers.len() + self.empty_padding)?;
-            // }
-            // #[cfg(unix)]
-            // {
-            //     self.term.clear_last_lines(self.buffers.len() - 1 + self.empty_padding)?;
-            // }
         }
         Ok(())
     }
