@@ -1,17 +1,17 @@
-use std::{io, mem};
-use std::os::windows::io::AsRawHandle;
 
+use std::os::windows::io::AsRawHandle;
+use std::{io, mem};
 use console::Term;
 
-use winapi::um::winbase::GetFileInformationByHandleEx;
-use winapi::um::wincon::{
-    GetConsoleScreenBufferInfo, SetConsoleCursorPosition,
-    CONSOLE_SCREEN_BUFFER_INFO, COORD,
-};
-use winapi::um::fileapi::FILE_NAME_INFO;
-use winapi::um::minwinbase::FileNameInfo;
 use winapi::ctypes::c_void;
 use winapi::shared::minwindef::MAX_PATH;
+use winapi::um::fileapi::FILE_NAME_INFO;
+use winapi::um::minwinbase::FileNameInfo;
+use winapi::um::winbase::GetFileInformationByHandleEx;
+use winapi::um::wincon::{
+    GetConsoleScreenBufferInfo, SetConsoleCursorPosition, CONSOLE_SCREEN_BUFFER_INFO, COORD,
+};
+
 use winapi::um::winnt::{HANDLE, WCHAR};
 
 use crate::console_patch::common_term;
