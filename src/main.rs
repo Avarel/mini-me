@@ -7,9 +7,9 @@ use term::*;
 fn main() -> io::Result<()> {
     let prompt = MultilineTerm::builder()
         .prompt(|i, size, line| {
-            if i + 1 == size && line.len() == 0 { 
+            if i + 1 == size && line.len() == 0 {
                 " > | ".to_owned()
-            } else { 
+            } else {
                 format!("{:^3}| ", i + 1)
             }
         })
