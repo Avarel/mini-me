@@ -1,11 +1,7 @@
-mod console_patch;
-mod term;
-
 use std::io;
-use term::*;
 
 fn main() -> io::Result<()> {
-    let prompt = MultilineTerm::builder()
+    let prompt = multiline_console::MultilineTerm::builder()
         .prompt(|i, size, line| {
             if i + 1 == size && line.len() == 0 {
                 " > | ".to_owned()

@@ -1,7 +1,10 @@
 use std::io;
 use console::{Term, Key};
-use crate::console_patch::*;
 
+/// Multiline abstraction around a terminal.
+///
+/// This is a wrapper for the `Term` struct in the `console` crate.
+#[derive(Clone)]
 pub struct MultilineTerm {
     term: Term,
     empty_padding: usize,
@@ -13,6 +16,7 @@ pub struct MultilineTerm {
 }
 
 impl MultilineTerm {
+    /// Create a builder for `MultilineTerm`.
     pub fn builder() -> MultilineTermBuilder {
         MultilineTermBuilder::default()
     }
@@ -81,7 +85,7 @@ impl MultilineTerm {
                     let len = self.current_line().len();
                     if self.index < len {
                         self.index = self.move_cursor_right(1)?;
-                    } else if self.line < self.buffers.len() {
+                    } else if self.line + 1 < self.buffers.len() {
                         // Move to the beginning of the next line.
                         self.line = self.move_cursor_down(1)?;
                         self.index = self.move_cursor_to_start()?;
@@ -294,13 +298,13 @@ impl MultilineTerm {
     /// Move the current cursor to the last line.
     fn move_cursor_to_bottom(&self) -> io::Result<usize> {
         if self.buffers.len() == 0 { return Ok(0) }
-        move_cursor_down(&self.term, self.buffers.len() - self.line - 1)?;
+        self.term.move_cursor_down(self.buffers.len() - self.line - 1)?;
         Ok(self.buffers.len())
     }
 
     /// Move the cursor one line up.
     fn move_cursor_up(&self, n: usize) -> io::Result<usize> {
-        move_cursor_up(&self.term, n)?;
+        self.term.move_cursor_up(n)?;
         if self.line == 0 {
             Ok(0)
         } else {
@@ -310,7 +314,7 @@ impl MultilineTerm {
 
     /// Move the cursor one line down.
     fn move_cursor_down(&self, n: usize) -> io::Result<usize> {
-        move_cursor_down(&self.term, n)?;
+        self.term.move_cursor_down(n)?;
         Ok(self.line + 1)
     }
 
@@ -336,7 +340,7 @@ impl MultilineTerm {
 
     /// Move the cursor leftward using nondestructive backspaces.
     fn move_cursor_left(&self, n: usize) -> io::Result<usize> {
-        move_cursor_left(&self.term, n)?;
+        self.term.move_cursor_left(n)?;
         if self.index == 0 {
             Ok(0)
         } else {
@@ -348,52 +352,72 @@ impl MultilineTerm {
     /// This method is not safe to use if the cursor is not at `line:index`,
     /// as it draws from the buffer to move forward.
     fn move_cursor_right(&self, n: usize) -> io::Result<usize> {
-        move_cursor_right(&self.term, n)?;
+        self.term.move_cursor_right(n)?;
         Ok(self.index + 1)
     }
 }
 
-#[derive(Default)]
+/// Builder struct for `MultilineTerm`.
+#[derive(Clone, Default)]
 pub struct MultilineTermBuilder {
     anchor: Anchor,
-    buffers: Vec<String>,
+    initial_buffers: Vec<String>,
     line: usize,
     index: usize,
     prompt: Option<fn(usize, usize, &str) -> String>,
 }
 
-#[allow(dead_code)]
 impl MultilineTermBuilder {
+    /// Sets the anchor mode for the multiline terminal, 
+    /// which can either be `InPlace` or `Bottom`.
     pub fn anchor(&mut self, anchor: Anchor) -> &mut Self {
         self.anchor = anchor;
         self
     }
 
-    pub fn buffers(&mut self, buffers: Vec<String>) -> &mut Self {
-        self.buffers = buffers;
+    /// Set the buffer that the terminal will be initialized with.
+    pub fn initial_buffers(&mut self, buffers: Vec<String>) -> &mut Self {
+        self.initial_buffers = buffers;
         self
     }
 
+    /// Set what line the cursor will initially start at.
     pub fn line(&mut self, line: usize) -> &mut Self {
         self.line = line;
         self
     }
 
+    /// Set what index the cursor will initially start at.
     pub fn index(&mut self, index: usize) -> &mut Self {
         self.index = index;
         self
     }
 
+    /// Set the function that provides the prompt printing.
     pub fn prompt(&mut self, f: fn(usize, usize, &str) -> String) -> &mut Self {
         self.prompt = Some(f);
         self
     }
 
-    pub fn build_stdout(&mut self) -> MultilineTerm {
+    /// Build a multiline terminal targeted to stdout.
+    pub fn build_stdout(&self) -> MultilineTerm {
         MultilineTerm {
             term: Term::stdout(),
             anchor: self.anchor,
-            buffers: self.buffers.clone(),
+            buffers: self.initial_buffers.clone(),
+            line: self.line,
+            index: self.index,
+            empty_padding: 0,
+            prompt: self.prompt.clone()
+        }
+    }
+
+    /// Build a multiline terminal targeted to stderr.
+    pub fn build_stderr(&self) -> MultilineTerm {
+        MultilineTerm {
+            term: Term::stderr(),
+            anchor: self.anchor,
+            buffers: self.initial_buffers.clone(),
             line: self.line,
             index: self.index,
             empty_padding: 0,
