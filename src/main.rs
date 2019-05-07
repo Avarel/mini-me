@@ -8,10 +8,10 @@ use console_patch::*;
 
 fn main() -> io::Result<()> {
     let mut prompt = MultilineTerm::stdout();
-    prompt.prompt = Some(|i| format!("{:^3}| ", i));
+    prompt.prompt = Some(|i| format!("{:^3}| ", i + 1));
 
     let result = prompt.read_multiline()?;
-    println!("{}", result);
+    dbg!(result);
     Ok(())
 }
 
@@ -31,7 +31,7 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
             term: Term::stdout(),
             buffers: Vec::new(),
             empty_padding: 0,
-            line: 1,
+            line: 0,
             index: 0,
             prompt: None
         }
@@ -43,7 +43,7 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
             term: Term::stderr(),
             buffers: Vec::new(),
             empty_padding: 0,
-            line: 1,
+            line: 0,
             index: 0,
             prompt: None
         }
@@ -56,12 +56,12 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
 
     /// Get a reference to current line of the cursor on the buffer.
     pub fn current_line(&self) -> &str {
-        &self.buffers[self.line - 1]
+        &self.buffers[self.line]
     }
 
     /// Get a mutable reference to the current line of the cursor on the buffer.
     pub fn current_line_mut(&mut self) -> &mut String {
-        &mut self.buffers[self.line - 1]
+        &mut self.buffers[self.line]
     }
 
     /// Read multiple lines of input.
@@ -89,7 +89,7 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
                 }
                 Key::ArrowUp => {
                     if self.buffers.is_empty() { continue }
-                    if self.line > 1 {
+                    if self.line > 0 {
                         self.line = self.move_cursor_up(1)?;
 
                         // Ensure that the cursor isn't beyond the end of the line.
@@ -102,7 +102,7 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
                     if self.buffers.is_empty() { continue }
                     if self.index > 0 {
                         self.index = self.move_cursor_left(1)?;
-                    } else if self.line > 1 {
+                    } else if self.line > 0 {
                         // Move to the end of the previous line.
                         self.line = self.move_cursor_up(1)?;
                         self.index = self.move_cursor_to_end()?;
@@ -119,18 +119,18 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
                         self.index = self.move_cursor_to_start()?;
                     }
                 }
-                Key::Char('\x7f') | Key::Char('\x08') => {
+                Key::Char('\x7f') /* unix */ | Key::Char('\x08') /* windows */ => {
                     if self.buffers.is_empty() { continue }
                     if self.index > 0 {
                         self.index = self.delete_char_before_cursor();
                         self.redraw()?;
-                    } else if self.line > 1 {
+                    } else if self.line > 0 {
                         // Backspace at the beginning of the line, so push the contents of
                         // the current line to the line above it, and remove the line.
                         self.empty_padding += 1;
                         
                         // Push the content of the current line to the previous line.
-                        let cbuf = self.buffers.remove(self.line - 1);
+                        let cbuf = self.buffers.remove(self.line);
                         // Change line number.
                         self.line -= 1;
 
@@ -142,9 +142,6 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
                         self.redraw()?;
                     }
                 }
-                Key::Char('x') => {
-                    self.clear_draw()?;
-                }
                 Key::Char(c) => {
                     self.index = self.insert_char_before_cursor(c);
                     self.redraw_current_line()?;
@@ -154,7 +151,7 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
                     if self.buffers.len() != 0 {
                         self.move_cursor_to_bottom()?;
                         if self.current_line_len() == 0 {
-                            self.buffers.remove(self.line - 1);
+                            self.buffers.remove(self.line);
                         } else {
                             self.new_line()?;
                         }
@@ -164,21 +161,22 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
                 Key::Enter => {
                     if self.buffers.len() == 0 {
                         break
-                    } else if self.line == self.buffers.len() && self.current_line_len() == 0 {
+                    } else if self.line + 1 == self.buffers.len() && self.current_line_len() == 0 {
                         // Enter on the last line of the prompt which is also empty
                         // finishes the input.
 
                         // Remove last useless line.
-                        self.buffers.remove(self.line - 1);
+                        self.buffers.remove(self.line);
                         break
                     } else {
+                        self.clear_draw()?;
                         // Split the input after the cursor.
                         let cursor_idx = self.index;
                         let cbuf = self.current_line_mut();
                         let nbuf = cbuf.split_off(cursor_idx);
 
                         // Create a new line and move the cursor to the next line.
-                        self.buffers.insert(self.line, nbuf);
+                        self.buffers.insert(self.line + 1, nbuf);
                         self.index = 0;
                         self.line += 1;
 
@@ -186,12 +184,11 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
                             // If theres no padding to take up:
                             // Move the cursor to the bottom in order to force a new line be
                             // printed so that the redraw don't draw over any other input.
-                            self.move_cursor_to_bottom()?;
-                            #[cfg(unix)]
-                            {
-                                // Windows terminal force insert a new-line no matter what
+                            #[cfg(unix)] {
+                                self.move_cursor_to_bottom()?;
                                 self.new_line()?;
                             }
+                            // Windows terminal force insert a new-line no matter what and is weird
                         } else {
                             // The padding is created whenever there's an extra line
                             // created by backspacing at the beginning of a line and deleting it.
@@ -201,7 +198,7 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
                             self.empty_padding -= 1;
                         }
 
-                        self.redraw()?;
+                        self.draw()?;
                     }
                 }
                 _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "Unrecognized key input"))?
@@ -263,7 +260,7 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
 
         // Print out the contents.
         for i in 0..self.buffers.len() {
-            self.draw_line(i + 1)?;
+            self.draw_line(i)?;
             if i < self.buffers.len() - 1 {
                 // The last line should not have any new-line attached to it.
                 self.new_line()?;
@@ -274,21 +271,11 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
         // At this point the cursor is pointed at the very end of the last line.
         
         let last_len = self.buffers.last().unwrap().len();
-        self.move_cursor_up(self.buffers.len() - self.line)?;
+        self.move_cursor_up(self.buffers.len() - self.line - 1)?;
         if self.index < last_len {
             self.move_cursor_left(last_len - self.index)?;
         } else if self.index > last_len {
-            // Not safe to use move_cursor_right because that method assumes
-            // that the cursor is exactly at `line:index`, which is not what
-            // the drawn cursor is at.
-            // #[cfg(not(unix))]
-            // {
-            //     self.term.write_str(&self.current_line()[last_len..self.index])?;
-            // }
-            // #[cfg(unix)]
-            // {
-                move_cursor_right(&self.term, self.index)?;
-            // }
+            self.move_cursor_right(self.index)?;
         }
 
         Ok(())
@@ -299,15 +286,16 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
         self.move_cursor_to_bottom()?;
         self.term.clear_line()?;
         if self.buffers.len() != 0 {
-            #[cfg(windows)]
-            {
-                // Windows is REALLY weird about this.
-                self.term.clear_last_lines(self.buffers.len() + self.empty_padding)?;
-            }
-            #[cfg(unix)]
-            {
-                self.term.clear_last_lines(self.buffers.len() - 1 + self.empty_padding)?;
-            }
+            self.term.clear_last_lines(self.buffers.len() - 1 + self.empty_padding)?;
+            // #[cfg(windows)]
+            // {
+            //     // Windows is REALLY weird about this.
+            //     self.term.clear_last_lines(self.buffers.len() + self.empty_padding)?;
+            // }
+            // #[cfg(unix)]
+            // {
+            //     self.term.clear_last_lines(self.buffers.len() - 1 + self.empty_padding)?;
+            // }
         }
         Ok(())
     }
@@ -320,11 +308,10 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
 
     /// Draw the line (`index` starts at 1).
     fn draw_line(&self, index: usize) -> io::Result<()> {
-        let i = index - 1;
         if let Some(f) = &self.prompt {
-            self.term.write_str(&f(i))?;
+            self.term.write_str(&f(index))?;
         }
-        self.term.write_str(&self.buffers[i])
+        self.term.write_str(&self.buffers[index])
     }
 
     // Draw the current line.
@@ -353,14 +340,18 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
     /// Move the current cursor to the last line.
     fn move_cursor_to_bottom(&self) -> io::Result<usize> {
         if self.buffers.len() == 0 { return Ok(0) }
-        move_cursor_down(&self.term, self.buffers.len() - self.line + 1)?;
+        move_cursor_down(&self.term, self.buffers.len() - self.line - 1)?;
         Ok(self.buffers.len())
     }
 
     /// Move the cursor one line up.
     fn move_cursor_up(&self, n: usize) -> io::Result<usize> {
         move_cursor_up(&self.term, n)?;
-        Ok(self.line - 1)
+        if self.line == 0 {
+            Ok(0)
+        } else {
+            Ok(self.line - 1)
+        }
     }
 
     /// Move the cursor one line down.
@@ -403,8 +394,7 @@ impl<F: Fn(usize) -> String> MultilineTerm<F> {
     /// This method is not safe to use if the cursor is not at `line:index`,
     /// as it draws from the buffer to move forward.
     fn move_cursor_right(&self, n: usize) -> io::Result<usize> {
-        let cbuf = self.current_line();
-        self.term.write_str(&cbuf[self.index..self.index + n])?;
+        move_cursor_right(&self.term, n)?;
         Ok(self.index + 1)
     }
 }
