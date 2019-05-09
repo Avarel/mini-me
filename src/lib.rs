@@ -1,24 +1,38 @@
 use std::io;
 use console::{Term, Key};
 
+/// Reexport the console crate.
+pub use console;
+
 /// Multiline abstraction around a terminal.
 ///
 /// This is a wrapper for the `Term` struct in the `console` crate.
-#[derive(Clone)]
 pub struct MultilineTerm {
+    /// Internal `console::term::Term` that this struct wraps around.
     term: Term,
-    empty_padding: usize,
+    /// The mode of anchoring for the multiline terminal.
     anchor: Anchor,
+    /// Helper field for anchor mode `Bottom`.
+    empty_padding: usize,
+    /// Buffer for each line in the multiline terminal.
+    /// The buffer does not get allocated until the first letter has been typed.
     buffers: Vec<String>,
+    /// Current line of the cursor.
     line: usize,
+    /// Current index of the cursor.
     index: usize,
-    prompt: Option<fn(usize, usize, &str) -> String>,
+    prompt: Option<Box<dyn Fn(usize, &Self) -> String>>,
 }
 
 impl MultilineTerm {
     /// Create a builder for `MultilineTerm`.
     pub fn builder() -> MultilineTermBuilder {
         MultilineTermBuilder::default()
+    }
+
+    /// Return the current buffer of the terminal.
+    pub fn buffers(&self) -> &Vec<String> {
+        &self.buffers
     }
 
     #[doc(hidden)]
@@ -91,7 +105,7 @@ impl MultilineTerm {
                         self.index = self.move_cursor_to_start()?;
                     }
                 }
-                Key::Char('\x7f') /* unix */ | Key::Char('\x08') /* windows */ => {
+                Key::Back => {
                     if self.buffers.is_empty() { continue }
                     if self.index > 0 {
                         self.index = self.delete_char_before_cursor();
@@ -214,7 +228,7 @@ impl MultilineTerm {
         // Handle empty buffer.
         if self.buffers.is_empty() {
             if let Some(f) = &self.prompt {
-                self.term.write_str(&f(0, 1, ""))?;
+                self.term.write_str(&f(0, self))?;
             }
             return Ok(())
         }
@@ -267,7 +281,7 @@ impl MultilineTerm {
     /// Draw the line given an index.
     fn draw_line(&self, index: usize) -> io::Result<()> {
         if let Some(f) = &self.prompt {
-            self.term.write_str(&f(index, self.buffers.len(), &self.buffers[index]))?;
+            self.term.write_str(&f(index, self))?;
         }
         self.term.write_str(&self.buffers[index])
     }
@@ -358,49 +372,49 @@ impl MultilineTerm {
 }
 
 /// Builder struct for `MultilineTerm`.
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct MultilineTermBuilder {
     anchor: Anchor,
     initial_buffers: Vec<String>,
     line: usize,
     index: usize,
-    prompt: Option<fn(usize, usize, &str) -> String>,
+    prompt: Option<Box<dyn Fn(usize, &MultilineTerm) -> String>>,
 }
 
 impl MultilineTermBuilder {
     /// Sets the anchor mode for the multiline terminal, 
     /// which can either be `InPlace` or `Bottom`.
-    pub fn anchor(&mut self, anchor: Anchor) -> &mut Self {
+    pub fn anchor(mut self, anchor: Anchor) -> Self {
         self.anchor = anchor;
         self
     }
 
     /// Set the buffer that the terminal will be initialized with.
-    pub fn initial_buffers(&mut self, buffers: Vec<String>) -> &mut Self {
+    pub fn initial_buffers(mut self, buffers: Vec<String>) -> Self {
         self.initial_buffers = buffers;
         self
     }
 
     /// Set what line the cursor will initially start at.
-    pub fn line(&mut self, line: usize) -> &mut Self {
+    pub fn line(mut self, line: usize) -> Self {
         self.line = line;
         self
     }
 
     /// Set what index the cursor will initially start at.
-    pub fn index(&mut self, index: usize) -> &mut Self {
+    pub fn index(mut self, index: usize) -> Self {
         self.index = index;
         self
     }
 
     /// Set the function that provides the prompt printing.
-    pub fn prompt(&mut self, f: fn(usize, usize, &str) -> String) -> &mut Self {
-        self.prompt = Some(f);
+    pub fn prompt<F: 'static + Fn(usize, &MultilineTerm) -> String>(mut self, f: F)  -> Self {
+        self.prompt = Some(Box::new(f));
         self
     }
 
     /// Build a multiline terminal targeted to stdout.
-    pub fn build_stdout(&self) -> MultilineTerm {
+    pub fn build_stdout(self) -> MultilineTerm {
         MultilineTerm {
             term: Term::stdout(),
             anchor: self.anchor,
@@ -408,12 +422,12 @@ impl MultilineTermBuilder {
             line: self.line,
             index: self.index,
             empty_padding: 0,
-            prompt: self.prompt.clone()
+            prompt: self.prompt
         }
     }
 
     /// Build a multiline terminal targeted to stderr.
-    pub fn build_stderr(&self) -> MultilineTerm {
+    pub fn build_stderr(self) -> MultilineTerm {
         MultilineTerm {
             term: Term::stderr(),
             anchor: self.anchor,
@@ -421,7 +435,7 @@ impl MultilineTermBuilder {
             line: self.line,
             index: self.index,
             empty_padding: 0,
-            prompt: self.prompt.clone()
+            prompt: self.prompt
         }
     }
 }
