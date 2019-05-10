@@ -21,43 +21,82 @@ pub struct MultilineTerm {
     line: usize,
     /// Current index of the cursor.
     index: usize,
-    prompt: Option<Box<dyn Fn(usize, &Self) -> String>>,
+    /// Function to draw the prompt.
+    gutter: Option<Box<dyn Fn(usize, &Self) -> String>>,
 }
+
+// TODO: separate certain properties into `MultilineTermOptions`
 
 impl MultilineTerm {
     /// Create a builder for `MultilineTerm`.
+    #[inline]
     pub fn builder() -> MultilineTermBuilder {
         MultilineTermBuilder::default()
     }
 
     /// Return the current buffer of the terminal.
+    #[inline]
     pub fn buffers(&self) -> &Vec<String> {
         &self.buffers
     }
 
+    /// Return a mutable reference to the buffer of the terminal.
+    #[inline]
+    pub fn buffers_mut(&mut self) -> &mut Vec<String> {
+        &mut self.buffers
+    }
+
     #[doc(hidden)]
+    #[inline]
     fn current_line_len(&self) -> usize {
         self.current_line().len()
     }
 
+    /// Return the cursor's line number.
+    #[inline]
+    pub fn cursor_line(&self) -> usize {
+        self.line
+    }
+
+    /// Return the cursor's index number.
+    #[inline]
+    pub fn cursor_index(&self) -> usize {
+        self.index
+    }
+
     /// Get a reference to current line of the cursor on the buffer.
+    /// Unlike `current_line_mut`, this function will not allocate a new string
+    /// if the buffer is empty, instead returning an empty string.
     pub fn current_line(&self) -> &str {
-        &self.buffers[self.line]
+        if self.buffers().len() == 0 {
+            return ""
+        }
+        &self.buffers()[self.line]
     }
 
     /// Get a mutable reference to the current line of the cursor on the buffer.
+    /// 
+    /// ### Warning
+    /// This function will allocate a new `String` to the buffer if it is empty.
     pub fn current_line_mut(&mut self) -> &mut String {
-        &mut self.buffers[self.line]
+        if self.buffers().is_empty() {
+            let s = String::new();
+            self.buffers_mut().push(s);
+            return &mut self.buffers_mut()[0]
+        }
+        let line = self.line;
+        &mut self.buffers_mut()[line]
     }
 
     /// Read multiple lines of input.
     /// 
+    /// ### Features
     /// * `Enter` on an empty last line will submit the input.
     /// * `Enter` on a non-empty line will create a new line.
     /// * `Backspace` at the beginning of the line to tappend the content
     ///   of the current line to the previous line.
     /// 
-    /// This does not include the empty line or trailing newline.
+    /// The returned result does not include the final empty line or trailing newline.
     pub fn read_multiline(mut self) -> io::Result<String> {
         self.draw()?;
         loop {
@@ -66,26 +105,19 @@ impl MultilineTerm {
                     if self.buffers.is_empty() { continue }
                     if self.line + 1 < self.buffers.len() {
                         self.line = self.move_cursor_down(1)?;
-
-                        // Ensure that the cursor isn't beyond the end of the line.
-                        if self.index > self.current_line_len() {
-                            self.index = self.move_cursor_to_end()?;
-                        }
+                        self.redraw_current_line()?;
                     }
                 }
                 Key::ArrowUp => {
                     if self.buffers.is_empty() { continue }
                     if self.line > 0 {
                         self.line = self.move_cursor_up(1)?;
-
-                        // Ensure that the cursor isn't beyond the end of the line.
-                        if self.index > self.current_line_len() {
-                            self.index = self.move_cursor_to_end()?;
-                        }
+                        self.redraw_current_line()?;
                     }
                 }
                 Key::ArrowLeft => {
                     if self.buffers.is_empty() { continue }
+                    self.index = self.ensure_cursor_index();
                     if self.index > 0 {
                         self.index = self.move_cursor_left(1)?;
                     } else if self.line > 0 {
@@ -96,6 +128,7 @@ impl MultilineTerm {
                 }
                 Key::ArrowRight => {
                     if self.buffers.is_empty() { continue }
+                    self.index = self.ensure_cursor_index();
                     let len = self.current_line().len();
                     if self.index < len {
                         self.index = self.move_cursor_right(1)?;
@@ -107,6 +140,8 @@ impl MultilineTerm {
                 }
                 Key::Back => {
                     if self.buffers.is_empty() { continue }
+                    self.index = self.ensure_cursor_index();
+
                     if self.index > 0 {
                         self.index = self.delete_char_before_cursor();
                         self.redraw_current_line()?;
@@ -134,6 +169,7 @@ impl MultilineTerm {
                     }
                 }
                 Key::Char(c) => {
+                    self.index = self.ensure_cursor_index();
                     self.index = self.insert_char_before_cursor(c);
                     self.redraw_current_line()?;
                 }
@@ -160,6 +196,7 @@ impl MultilineTerm {
                         self.buffers.remove(self.line);
                         break
                     } else {
+                        self.index = self.ensure_cursor_index();
                         self.clear_draw()?;
                         // Split the input after the cursor.
                         let cursor_idx = self.index;
@@ -213,10 +250,6 @@ impl MultilineTerm {
 
     /// Insert the character before the cursor.
     fn insert_char_before_cursor(&mut self, c: char) -> usize {
-        if self.buffers.is_empty() {
-            self.buffers.push(String::new());
-        }
-
         let idx = self.index;
         let buf = self.current_line_mut();
         buf.insert(idx, c);
@@ -227,7 +260,7 @@ impl MultilineTerm {
     fn draw(&self) -> io::Result<()> {
         // Handle empty buffer.
         if self.buffers.is_empty() {
-            if let Some(f) = &self.prompt {
+            if let Some(f) = &self.gutter {
                 self.term.write_str(&f(0, self))?;
             }
             return Ok(())
@@ -255,9 +288,7 @@ impl MultilineTerm {
         self.move_cursor_up(self.buffers.len() - self.line - 1)?;
         if self.index < last_len {
             self.move_cursor_left(last_len - self.index)?;
-        } else if self.index > last_len {
-            self.move_cursor_right(self.index)?;
-        }
+        } 
 
         Ok(())
     }
@@ -279,63 +310,54 @@ impl MultilineTerm {
     }
 
     /// Draw the line given an index.
+    /// This method does not move the cursor.
     fn draw_line(&self, index: usize) -> io::Result<()> {
-        if let Some(f) = &self.prompt {
+        if let Some(f) = &self.gutter {
             self.term.write_str(&f(index, self))?;
         }
         self.term.write_str(&self.buffers[index])
     }
 
-    /// Draw the current line.
+    /// Draw the current line and move the cursor appropriately.
     fn draw_current_line(&self) -> io::Result<()> {
         self.draw_line(self.line)?;
-        self.move_cursor_left(self.current_line_len() - self.index)?;
+        // disable this check if you want overflow cursor
+        if  self.index < self.current_line_len() {
+            self.move_cursor_left(self.current_line_len() - self.index)?;
+        }
         Ok(())
     }
 
     /// Clear the current line on the screen.
+    #[inline]
     fn clear_current_line(&self) -> io::Result<()> {
         self.term.clear_line()
     }
 
     /// Redraw the current line, which is cheaper than clearing and redrawing the entire line.
+    #[inline]
     fn redraw_current_line(&self) -> io::Result<()> {
         self.clear_current_line()?;
         self.draw_current_line()
     }
 
     /// Insert a new line on the screen.
+    #[inline]
     fn new_line(&self) -> io::Result<()> {
         self.term.write_line("")
     }
 
     /// Move the current cursor to the last line.
+    #[inline]
     fn move_cursor_to_bottom(&self) -> io::Result<usize> {
         if self.buffers.len() == 0 { return Ok(0) }
         self.term.move_cursor_down(self.buffers.len() - self.line - 1)?;
         Ok(self.buffers.len())
     }
 
-    /// Move the cursor one line up.
-    fn move_cursor_up(&self, n: usize) -> io::Result<usize> {
-        self.term.move_cursor_up(n)?;
-        if self.line == 0 {
-            Ok(0)
-        } else {
-            Ok(self.line - 1)
-        }
-    }
-
-    /// Move the cursor one line down.
-    fn move_cursor_down(&self, n: usize) -> io::Result<usize> {
-        self.term.move_cursor_down(n)?;
-        Ok(self.line + 1)
-    }
-
     /// Move the cursor to the end of the current line.
     /// This method is not safe to use if the cursor is not at `line:index`,
-    /// as it may draw from the buffer to move forward if the cursor needs
-    /// to move in the rightward direction.
+    #[inline]
     fn move_cursor_to_end(&self) -> io::Result<usize> {
         let len = self.current_line().len();
         if self.index > len {
@@ -347,12 +369,32 @@ impl MultilineTerm {
     }
 
     /// Move the cursor to the beginning of the line.
+    #[inline]
     fn move_cursor_to_start(&self) -> io::Result<usize> {
         self.move_cursor_left(self.index)?;
         Ok(0)
     }
 
+    /// Move the cursor one line up.
+    #[inline]
+    fn move_cursor_up(&self, n: usize) -> io::Result<usize> {
+        self.term.move_cursor_up(n)?;
+        if self.line == 0 {
+            Ok(0)
+        } else {
+            Ok(self.line - 1)
+        }
+    }
+
+    /// Move the cursor one line down.
+    #[inline]
+    fn move_cursor_down(&self, n: usize) -> io::Result<usize> {
+        self.term.move_cursor_down(n)?;
+        Ok(self.line + 1)
+    }
+
     /// Move the cursor leftward using nondestructive backspaces.
+    #[inline]
     fn move_cursor_left(&self, n: usize) -> io::Result<usize> {
         self.term.move_cursor_left(n)?;
         if self.index == 0 {
@@ -365,51 +407,68 @@ impl MultilineTerm {
     /// Move the cursor rightward.
     /// This method is not safe to use if the cursor is not at `line:index`,
     /// as it draws from the buffer to move forward.
+    #[inline]
     fn move_cursor_right(&self, n: usize) -> io::Result<usize> {
         self.term.move_cursor_right(n)?;
         Ok(self.index + 1)
+    }
+
+    // Returns an index that ensure that the cursor index is not overflowing the end.
+    #[doc(hidden)]
+    fn ensure_cursor_index(&self) -> usize {
+        self.index.min(self.current_line_len())
     }
 }
 
 /// Builder struct for `MultilineTerm`.
 #[derive(Default)]
 pub struct MultilineTermBuilder {
+    /// The mode of anchoring for the multiline terminal.
     anchor: Anchor,
-    initial_buffers: Vec<String>,
+    /// Initial buffer for the multiline terminal.
+    buffers: Vec<String>,
+    /// Initial line that the cursor is supposed to be set at.
     line: usize,
+    /// Initial index that the cursor is supposed to be set at.
     index: usize,
-    prompt: Option<Box<dyn Fn(usize, &MultilineTerm) -> String>>,
+    /// Function to draw the gutter.
+    gutter: Option<Box<dyn Fn(usize, &MultilineTerm) -> String>>,
 }
 
 impl MultilineTermBuilder {
     /// Sets the anchor mode for the multiline terminal, 
     /// which can either be `InPlace` or `Bottom`.
+    #[inline]
     pub fn anchor(mut self, anchor: Anchor) -> Self {
         self.anchor = anchor;
         self
     }
 
     /// Set the buffer that the terminal will be initialized with.
+    #[inline]
     pub fn initial_buffers(mut self, buffers: Vec<String>) -> Self {
-        self.initial_buffers = buffers;
+        self.buffers = buffers;
         self
     }
 
     /// Set what line the cursor will initially start at.
+    #[inline]
     pub fn line(mut self, line: usize) -> Self {
         self.line = line;
         self
     }
 
     /// Set what index the cursor will initially start at.
+    #[inline]
     pub fn index(mut self, index: usize) -> Self {
         self.index = index;
         self
     }
 
     /// Set the function that provides the prompt printing.
-    pub fn prompt<F: 'static + Fn(usize, &MultilineTerm) -> String>(mut self, f: F)  -> Self {
-        self.prompt = Some(Box::new(f));
+    #[inline]
+    pub fn gutter<F: 'static + Fn(usize, &MultilineTerm) -> String>(mut self, f: F)  -> Self {
+        self.gutter = Some(Box::new(f));
         self
     }
 
@@ -418,11 +477,11 @@ impl MultilineTermBuilder {
         MultilineTerm {
             term: Term::stdout(),
             anchor: self.anchor,
-            buffers: self.initial_buffers.clone(),
+            buffers: self.buffers,
             line: self.line,
             index: self.index,
             empty_padding: 0,
-            prompt: self.prompt
+            gutter: self.gutter
         }
     }
 
@@ -431,11 +490,11 @@ impl MultilineTermBuilder {
         MultilineTerm {
             term: Term::stderr(),
             anchor: self.anchor,
-            buffers: self.initial_buffers.clone(),
+            buffers: self.buffers,
             line: self.line,
             index: self.index,
             empty_padding: 0,
-            prompt: self.prompt
+            gutter: self.gutter
         }
     }
 }

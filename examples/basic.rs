@@ -2,11 +2,12 @@ use std::io;
 use multiline_console::console::style;
 
 fn main() -> io::Result<()> {
-    let prompt = multiline_console::MultilineTerm::builder()
+    println!("{} Write something cool!", style("  >>>  ").black().on_green());
+    let term = multiline_console::MultilineTerm::builder()
         // Anchor the last line on the bottom
-        .anchor(multiline_console::Anchor::Bottom) 
-        // Print out the prompt.
-        .prompt(move |i, term| {
+        // .anchor(multiline_console::Anchor::Bottom) 
+        // Print out the gutter.
+        .gutter(move |i, term| {
             // Signal that you're supposed to ENTER when the buffer is
             // empty/has a length of zero in order to submit the response.
             if term.buffers().is_empty() || i + 1 == term.buffers().len() && term.buffers().last().unwrap().len() == 0 {
@@ -18,6 +19,6 @@ fn main() -> io::Result<()> {
         // Build the prompt.
         .build_stdout();
 
-    dbg!(prompt.read_multiline())?;
+    dbg!(term.read_multiline())?;
     Ok(())
 }
