@@ -5,10 +5,7 @@ fn main() -> io::Result<()> {
     println!("{} Write something cool!", style(" >>> ").black().on_green());
     let term = multiline_console::MultilineTerm::builder()
         // Anchor the last line on the bottom
-        // .anchor(multiline_console::AnchorMode::Bottom) 
-        // Always fully render the terminal
-        // .render(multiline_console::RenderMode::Full)
-        // Print out the gutter.
+        .anchor(multiline_console::AnchorMode::Bottom) 
         .gutter(move |i, term| {
             // Signal that you're supposed to ENTER when the buffer is
             // empty/has a length of zero in order to submit the response.
