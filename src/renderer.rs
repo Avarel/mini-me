@@ -1,12 +1,13 @@
 use std::io;
-use std::cell::Cell;
+use std::cell::{RefCell, Cell};
 use crate::{MultilineTerm, Cursor};
 
 pub struct Renderer {
-    pub mode: RenderMode,
-    /// Helper field for anchor mode `Bottom`.
-    pub empty_padding: usize,
-    pub previous_draw: Cell<PreviousDrawState>,
+    #[doc(hidden)]
+    /// Previous draw state.
+    pds: Cell<PreviousDrawState>,
+    /// Function to draw the prompt.
+    gutter: Option<Box<dyn Fn(usize, &MultilineTerm) -> String>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,28 +43,20 @@ impl Default for AnchorMode {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RenderMode {
-    /// Allows for proper prompt drawing everytime and
-    /// terminal-wide visual updates to the input.
-    Full,
-    /// Most performant, but may be limited when trying
-    /// to render more advanced options.
-    Lazy,
-}
-
-impl Default for RenderMode {
+impl Default for Renderer {
     fn default() -> Self {
-        RenderMode::Lazy
+        Self {
+            pds: Cell::new(PreviousDrawState::default()),
+            gutter: None,
+        }
     }
 }
 
 impl Renderer {
-    pub fn new() -> Self {
+    pub fn with_gutter<F: 'static + Fn(usize, &MultilineTerm) -> String>(f: F) -> Self {
         Self {
-            mode: RenderMode::Lazy,
-            empty_padding: 0,
-            previous_draw: std::cell::Cell::new(Default::default()),
+            pds: Cell::new(PreviousDrawState::default()),
+            gutter: Some(Box::new(f))
         }
     }
 
@@ -71,19 +64,19 @@ impl Renderer {
     fn update_pds<F: FnOnce(&mut PreviousDrawState)>(&self, f: F) {
         let mut pds = self.pds();
         f(&mut pds);
-        self.previous_draw.set(pds);
+        self.pds.set(pds);
     }
 
     #[doc(hidden)]
     fn pds(&self) -> PreviousDrawState {
-        self.previous_draw.get()
+        self.pds.get()
     }
 
     /// Draw the prompt.
     pub fn draw(&self, term: &MultilineTerm) -> io::Result<()> {
         // Handle empty buffer.
         if term.buffers.is_empty() {
-            if let Some(f) = &term.gutter {
+            if let Some(f) = &self.gutter {
                 term.inner.write_str(&f(0, term))?;
             }
             self.update_pds(|pds| pds.height = 1);
@@ -100,7 +93,7 @@ impl Renderer {
         }
 
         self.update_pds(|pds| {
-            pds.height = self.empty_padding + term.buffers.len();
+            pds.height = term.buffers.len();
             pds.cursor.line = term.buffers.len() - 1;
             pds.cursor.index = term.buffers.last().unwrap().len();
         });
@@ -129,12 +122,12 @@ impl Renderer {
     pub fn clear_draw(&self, term: &MultilineTerm) -> io::Result<()> {
         self.move_cursor_to_bottom(term)?;
         term.inner.clear_line()?;
-        term.inner.clear_last_lines(self.pds().height - 1 + self.empty_padding)?;
+        term.inner.clear_last_lines(self.pds().height - 1)?;
         Ok(())
     }
 
     /// Redraw the screen.
-    pub fn redraw(&self, term: &MultilineTerm, _: RenderMode) -> io::Result<()> {
+    pub fn redraw(&self, term: &MultilineTerm) -> io::Result<()> {
         self.clear_draw(term)?;
         self.draw(term)
     }
@@ -142,7 +135,7 @@ impl Renderer {
     /// Draw the line given an index.
     /// This method does not move the cursor.
     pub fn draw_line(&self, term: &MultilineTerm, index: usize) -> io::Result<()> {
-        if let Some(f) = &term.gutter {
+        if let Some(f) = &self.gutter {
             term.inner.write_str(&f(index, term))?;
         }
         term.inner.write_str(&term.buffers[index])
