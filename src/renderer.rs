@@ -1,18 +1,15 @@
 use std::io;
-use std::cell::RefCell;
-use std::cell::RefMut;
-use std::cell::Ref;
+use std::cell::Cell;
 use crate::{MultilineTerm, Cursor};
 
 pub struct Renderer {
-    /// The mode of anchoring for the multiline terminal.
-    pub anchor: AnchorMode,
     pub mode: RenderMode,
     /// Helper field for anchor mode `Bottom`.
     pub empty_padding: usize,
-    pub previous_draw: RefCell<PreviousDrawState>,
+    pub previous_draw: Cell<PreviousDrawState>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PreviousDrawState {
     pub height: usize,
     pub cursor: Cursor 
@@ -62,29 +59,35 @@ impl Default for RenderMode {
 }
 
 impl Renderer {
-    fn previous_draw(&self) -> Ref<PreviousDrawState> {
-        self.previous_draw.borrow()
+    pub fn new() -> Self {
+        Self {
+            mode: RenderMode::Lazy,
+            empty_padding: 0,
+            previous_draw: std::cell::Cell::new(Default::default()),
+        }
     }
 
-    fn previous_draw_mut(&self) -> RefMut<PreviousDrawState> {
-        self.previous_draw.borrow_mut()
+    #[doc(hidden)]
+    fn update_pds<F: FnOnce(&mut PreviousDrawState)>(&self, f: F) {
+        let mut pds = self.pds();
+        f(&mut pds);
+        self.previous_draw.set(pds);
+    }
+
+    #[doc(hidden)]
+    fn pds(&self) -> PreviousDrawState {
+        self.previous_draw.get()
     }
 
     /// Draw the prompt.
     pub fn draw(&self, term: &MultilineTerm) -> io::Result<()> {
         // Handle empty buffer.
         if term.buffers.is_empty() {
-            if let Some(f) = &term.options.gutter {
+            if let Some(f) = &term.gutter {
                 term.inner.write_str(&f(0, term))?;
             }
+            self.update_pds(|pds| pds.height = 1);
             return Ok(())
-        }
-
-        if let AnchorMode::Bottom = self.anchor {
-            // Print out the padding.
-            for _ in 0..self.empty_padding {
-                self.new_line(term)?;
-            }
         }
 
         // Print out the contents.
@@ -96,81 +99,53 @@ impl Renderer {
             }
         }
 
+        self.update_pds(|pds| {
+            pds.height = self.empty_padding + term.buffers.len();
+            pds.cursor.line = term.buffers.len() - 1;
+            pds.cursor.index = term.buffers.last().unwrap().len();
+        });
 
-        let last_len = term.buffers.last().unwrap().len();
-        {
-            *self.previous_draw.borrow_mut() = PreviousDrawState {
-                height: self.empty_padding + term.buffers.len(),
-                cursor: Cursor { line: term.buffers.len() - 1, index: last_len }
-            }.into();
-        }
+        self.draw_cursor(term)
+    }
 
-        // Position the cursor.
-        // At this point the cursor is pointed at the very end of the last line.
+    // Position the cursor.
+    // At this point the cursor is pointed at the very end of the last line.
+    pub fn draw_cursor(&self, term: &MultilineTerm) -> io::Result<()> {
+        let pds_index = self.pds().cursor.index;
         self.move_cursor_up(term, term.buffers.len() - term.cursor.line - 1)?;
-        if term.cursor.index < last_len {
-            self.move_cursor_left(term, last_len - term.cursor.index)?;
-        } else if term.cursor.index > last_len && term.cursor.line + 1 != term.buffers.len() {
-            self.move_cursor_right(term, term.current_line_len().min(term.cursor.index) - last_len)?;
+        
+        if term.cursor.index > term.current_line_len() {
+            self.move_cursor_left(term, pds_index - term.current_line_len())
+        } else if term.cursor.index < pds_index {
+            self.move_cursor_left(term, pds_index - term.cursor.index)
+        } else if term.cursor.index > pds_index {
+            self.move_cursor_right(term, term.cursor.index - pds_index)
+        } else {
+            Ok(())
         }
-
-        Ok(())
     }
 
     /// Clear the drawn prompt on the screen.
     pub fn clear_draw(&self, term: &MultilineTerm) -> io::Result<()> {
         self.move_cursor_to_bottom(term)?;
         term.inner.clear_line()?;
-        if term.buffers.len() != 0 {
-            term.inner.clear_last_lines(term.buffers.len() - 1 + self.empty_padding)?;
-        }
+        term.inner.clear_last_lines(self.pds().height - 1 + self.empty_padding)?;
         Ok(())
     }
 
     /// Redraw the screen.
-    pub fn redraw(&self, term: &MultilineTerm, hint: RenderMode) -> io::Result<()> {
-        if self.mode == RenderMode::Lazy && hint == RenderMode::Lazy {
-            self.clear_current_line(term)?;
-            self.draw_current_line(term)
-        } else {
-            let pdh = { self.previous_draw().height };
-            let pdl = { self.previous_draw().cursor.line };
-            self.move_cursor_down(term, pdh - pdl)?;
-            term.inner.clear_line()?;
-            if pdh != 0 {
-                dbg!(pdh);
-                term.inner.clear_last_lines(pdh + self.empty_padding)?;
-            }
-
-            // self.draw(term)
-            Ok(())
-        }
+    pub fn redraw(&self, term: &MultilineTerm, _: RenderMode) -> io::Result<()> {
+        self.clear_draw(term)?;
+        self.draw(term)
     }
 
     /// Draw the line given an index.
     /// This method does not move the cursor.
     pub fn draw_line(&self, term: &MultilineTerm, index: usize) -> io::Result<()> {
-        if let Some(f) = &term.options.gutter {
+        if let Some(f) = &term.gutter {
             term.inner.write_str(&f(index, term))?;
         }
         term.inner.write_str(&term.buffers[index])
-    }
-
-    /// Draw the current line and move the cursor appropriately.
-    pub fn draw_current_line(&self, term: &MultilineTerm) -> io::Result<()> {
-        self.draw_line(term, term.cursor.line)?;
-        self.previous_draw_mut().cursor.index = term.buffers[term.cursor.line].len();
-        // disable this check if you want overflow cursor
-        if term.cursor.index < term.current_line_len() {
-            self.move_cursor_left(term, term.current_line_len() - term.cursor.index)?;
-        }
-        Ok(())
-    }
-
-    /// Clear the current line on the screen.
-    #[inline]
-    pub fn clear_current_line(&self, term: &MultilineTerm) -> io::Result<()> {
-        term.inner.clear_line()
     }
 
     /// Insert a new line on the screen.
@@ -181,71 +156,62 @@ impl Renderer {
 
         /// Move the current cursor to the last line.
     #[inline]
-    pub fn move_cursor_to_bottom(&self, term: &MultilineTerm) -> io::Result<usize> {
-        if term.buffers.len() == 0 { return Ok(0) }
-        self.move_cursor_down(term, term.buffers.len() - term.cursor.line - 1)?;
-        Ok(term.buffers.len())
+    pub fn move_cursor_to_bottom(&self, term: &MultilineTerm) -> io::Result<()> {
+        self.move_cursor_down(term, self.pds().height - self.pds().cursor.line - 1)
     }
 
     /// Move the cursor to the end of the current line.
     /// This method is not safe to use if the cursor is not at `line:index`,
     #[inline]
-    pub fn move_cursor_to_end(&self, term: &MultilineTerm) -> io::Result<usize> {
-        let len = term.current_line().len();
-        if term.cursor.index > len {
-            self.move_cursor_left(term, term.cursor.index - len)?;
-        } else if term.cursor.index < len {
-            self.move_cursor_right(term, len - term.cursor.index)?;
+    pub fn move_cursor_to_end(&self, term: &MultilineTerm) -> io::Result<()> {
+        let pds = self.pds();
+        let len = term.current_line_len();
+        if pds.cursor.index > len {
+            self.move_cursor_left(term, pds.cursor.index - len)
+        } else if pds.cursor.index < len {
+            self.move_cursor_right(term, len - pds.cursor.index)
+        } else {
+            Ok(())
         }
-        Ok(len)
     }
 
     /// Move the cursor to the beginning of the line.
     #[inline]
-    pub fn move_cursor_to_start(&self, term: &MultilineTerm) -> io::Result<usize> {
+    pub fn move_cursor_to_start(&self, term: &MultilineTerm) -> io::Result<()> {
         self.move_cursor_left(term, term.cursor.index)?;
-        Ok(0)
+        self.update_pds(|pds| pds.cursor.index = 0);
+        Ok(())
     }
 
     /// Move the cursor one line up.
     #[inline]
-    pub fn move_cursor_up(&self, term: &MultilineTerm, n: usize) -> io::Result<usize> {
+    pub fn move_cursor_up(&self, term: &MultilineTerm, n: usize) -> io::Result<()> {
         term.inner.move_cursor_up(n)?;
-        self.previous_draw_mut().cursor.line -= n;
-        if term.cursor.line == 0 {
-            Ok(0)
-        } else {
-            Ok(term.cursor.line - n)
-        }
+        self.update_pds(|pds| pds.cursor.line -= n);
+        Ok(())
     }
 
     /// Move the cursor one line down.
     #[inline]
-    pub fn move_cursor_down(&self, term: &MultilineTerm, n: usize) -> io::Result<usize> {
+    pub fn move_cursor_down(&self, term: &MultilineTerm, n: usize) -> io::Result<()> {
         term.inner.move_cursor_down(n)?;
-        self.previous_draw_mut().cursor.line += n;
-        Ok(term.cursor.line + n)
+        self.update_pds(|pds| pds.cursor.line += n);
+        Ok(())
     }
 
     /// Move the cursor leftward using nondestructive backspaces.
     #[inline]
-    pub fn move_cursor_left(&self, term: &MultilineTerm, n: usize) -> io::Result<usize> {
+    pub fn move_cursor_left(&self, term: &MultilineTerm, n: usize) -> io::Result<()> {
         term.inner.move_cursor_left(n)?;
-        self.previous_draw_mut().cursor.index -= n;
-        if term.cursor.index == 0 {
-            Ok(0)
-        } else {
-            Ok(term.cursor.index - n)
-        }
+        self.update_pds(|pds| pds.cursor.index -= n);
+        Ok(())
     }
 
     /// Move the cursor rightward.
-    /// This method is not safe to use if the cursor is not at `line:index`,
-    /// as it draws from the buffer to move forward.
     #[inline]
-    pub fn move_cursor_right(&self, term: &MultilineTerm, n: usize) -> io::Result<usize> {
+    pub fn move_cursor_right(&self, term: &MultilineTerm, n: usize) -> io::Result<()> {
         term.inner.move_cursor_right(n)?;
-        self.previous_draw_mut().cursor.index += n;
-        Ok(term.cursor.index + n)
+        self.update_pds(|pds| pds.cursor.index += n);
+        Ok(())
     }
 }

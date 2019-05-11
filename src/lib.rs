@@ -16,21 +16,16 @@ pub struct MultilineTerm {
     buffers: Vec<String>,
     cursor: Cursor,
     renderer: Renderer,
-    options: MultilineTermOptions,
+    /// Function to draw the prompt.
+    gutter: Option<Box<dyn Fn(usize, &MultilineTerm) -> String>>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cursor {
     /// Current line of the cursor.
     pub line: usize,
     /// Current index of the cursor.
     pub index: usize,
-}
-
-pub struct MultilineTermOptions {
-    /// Buffer for each line in the multiline terminal.
-    /// The buffer does not get allocated until the first letter has been typed.
-    /// Function to draw the prompt.
-    gutter: Option<Box<dyn Fn(usize, &MultilineTerm) -> String>>,
 }
 
 impl MultilineTerm {
@@ -104,14 +99,14 @@ impl MultilineTerm {
                 Key::ArrowDown => {
                     if self.buffers.is_empty() { continue }
                     if self.cursor.line + 1 < self.buffers.len() {
-                        self.cursor.line = self.renderer.move_cursor_down(&self, 1)?;
+                        self.cursor.line += 1;
                         self.renderer.redraw(&self, RenderMode::Lazy)?;
                     }
                 }
                 Key::ArrowUp => {
                     if self.buffers.is_empty() { continue }
                     if self.cursor.line > 0 {
-                        self.cursor.line = self.renderer.move_cursor_up(&self, 1)?;
+                        self.cursor.line -= 1;
                         self.renderer.redraw(&self, RenderMode::Lazy)?;
                     }
                 }
@@ -119,24 +114,26 @@ impl MultilineTerm {
                     if self.buffers.is_empty() { continue }
                     self.cursor.index = self.ensure_cursor_index();
                     if self.cursor.index > 0 {
-                        self.cursor.index = self.renderer.move_cursor_left(&self, 1)?;
+                        self.cursor.index -= 1;
                     } else if self.cursor.line > 0 {
                         // Move to the end of the previous line.
-                        self.cursor.line = self.renderer.move_cursor_up(&self, 1)?;
-                        self.cursor.index = self.renderer.move_cursor_to_end(&self)?;
+                        self.cursor.line -= 1;
+                        self.cursor.index = self.buffers[self.cursor.line].len();
                     }
+                    self.renderer.redraw(&self, RenderMode::Lazy)?;
                 }
                 Key::ArrowRight => {
                     if self.buffers.is_empty() { continue }
                     self.cursor.index = self.ensure_cursor_index();
                     let len = self.current_line().len();
                     if self.cursor.index < len {
-                        self.cursor.index = self.renderer.move_cursor_right(&self, 1)?;
+                        self.cursor.index += 1;
                     } else if self.cursor.line + 1 < self.buffers.len() {
                         // Move to the beginning of the next line.
-                        self.cursor.line = self.renderer.move_cursor_down(&self, 1)?;
-                        self.cursor.index = self.renderer.move_cursor_to_start(&self)?;
+                        self.cursor.line += 1;
+                        self.cursor.index = 0;
                     }
+                    self.renderer.redraw(&self, RenderMode::Lazy)?;
                 }
                 Key::Back => {
                     if self.buffers.is_empty() { continue }
@@ -160,11 +157,6 @@ impl MultilineTerm {
                         self.current_line_mut().push_str(&cbuf);
                     
                         self.renderer.redraw(&self, RenderMode::Full)?;
-
-                        // Pad the top so the prompt can stay anchored to the bottom of the terminal.
-                        if self.renderer.anchor == AnchorMode::Bottom {
-                            self.renderer.empty_padding += 1;
-                        }
                     }
                 }
                 Key::Char(c) => {
@@ -173,15 +165,15 @@ impl MultilineTerm {
                     self.renderer.redraw(&self, RenderMode::Lazy)?;
                 }
                 Key::Escape => {
-                    // Quick escape and finish the input.
-                    if self.buffers.len() != 0 {
-                        self.renderer.move_cursor_to_bottom(&self)?;
-                        if self.current_line_len() == 0 {
-                            self.buffers.remove(self.cursor.line);
-                        } else {
-                            self.renderer.new_line(&self)?;
-                        }
-                    }
+                    // // Quick escape and finish the input.
+                    // if self.buffers.len() != 0 {
+                    //     self.renderer.move_cursor_to_bottom(&self)?;
+                    //     if self.current_line_len() == 0 {
+                    //         self.buffers.remove(self.cursor.line);
+                    //     } else {
+                    //         self.renderer.new_line(&self)?;
+                    //     }
+                    // }
                     break
                 }
                 Key::Enter => {
@@ -207,13 +199,6 @@ impl MultilineTerm {
                         self.cursor.line += 1;
 
                         self.renderer.redraw(&self, RenderMode::Full)?;
-
-                        // Remove the padding if there is space to be taken up.
-                        if self.renderer.anchor == AnchorMode::Bottom {
-                            if self.renderer.empty_padding != 0 {
-                                self.renderer.empty_padding -= 1;
-                            }
-                        }
                     }
                 }
                 _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "Unrecognized key input"))?
@@ -329,15 +314,8 @@ impl MultilineTermBuilder {
                 line: self.line,
                 index: self.index,
             },
-            renderer: Renderer {
-                anchor: self.anchor,
-                mode: self.render_mode,
-                empty_padding: 0,
-                previous_draw: std::cell::RefCell::new(Default::default()),
-            },
-            options: MultilineTermOptions {
-                gutter: self.gutter
-            }
+            renderer: Renderer::new(),
+            gutter: self.gutter
         }
     }
 
@@ -350,15 +328,8 @@ impl MultilineTermBuilder {
                 line: self.line,
                 index: self.index,
             },
-            renderer: Renderer {
-                anchor: self.anchor,
-                mode: self.render_mode,
-                empty_padding: 0,
-                previous_draw: std::cell::RefCell::new(Default::default()),
-            },
-            options: MultilineTermOptions {
-                gutter: self.gutter
-            }
+            renderer: Renderer::new(),
+            gutter: self.gutter
         }
     }
 }
