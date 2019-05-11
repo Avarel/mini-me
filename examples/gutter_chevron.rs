@@ -5,7 +5,7 @@ fn main() -> io::Result<()> {
     println!("{} Write something cool!", style(" >>> ").black().on_green());
     let term = multiline_console::MultilineTerm::builder()
         // Always fully render the terminal
-        .render(multiline_console::RenderMode::Full)
+        .render(multiline_console::renderer::RenderMode::Full)
         // Print out the gutter.
         .gutter(move |i, term| {
             // Signal that you're supposed to ENTER when the buffer is

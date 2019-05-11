@@ -1,5 +1,8 @@
+pub mod renderer;
+
 use std::io;
 use console::{Term, Key};
+use renderer::{AnchorMode, RenderMode, Renderer};
 
 /// Reexport the console crate.
 pub use console;
@@ -12,6 +15,7 @@ pub struct MultilineTerm {
     inner: Term,
     buffers: Vec<String>,
     cursor: Cursor,
+    renderer: Renderer,
     options: MultilineTermOptions,
 }
 
@@ -23,11 +27,6 @@ pub struct Cursor {
 }
 
 pub struct MultilineTermOptions {
-    /// The mode of anchoring for the multiline terminal.
-    anchor: AnchorMode,
-    render: RenderMode,
-    /// Helper field for anchor mode `Bottom`.
-    empty_padding: usize,
     /// Buffer for each line in the multiline terminal.
     /// The buffer does not get allocated until the first letter has been typed.
     /// Function to draw the prompt.
@@ -99,32 +98,32 @@ impl MultilineTerm {
     /// 
     /// The returned result does not include the final empty line or trailing newline.
     pub fn read_multiline(mut self) -> io::Result<String> {
-        self.options.render.draw(&self)?;
+        self.renderer.draw(&self)?;
         loop {
             match self.inner.read_key()? {
                 Key::ArrowDown => {
                     if self.buffers.is_empty() { continue }
                     if self.cursor.line + 1 < self.buffers.len() {
-                        self.cursor.line = self.move_cursor_down(1)?;
-                        self.options.render.redraw(&self, RenderMode::Lazy)?;
+                        self.cursor.line = self.renderer.move_cursor_down(&self, 1)?;
+                        self.renderer.redraw(&self, RenderMode::Lazy)?;
                     }
                 }
                 Key::ArrowUp => {
                     if self.buffers.is_empty() { continue }
                     if self.cursor.line > 0 {
-                        self.cursor.line = self.move_cursor_up(1)?;
-                        self.options.render.redraw(&self, RenderMode::Lazy)?;
+                        self.cursor.line = self.renderer.move_cursor_up(&self, 1)?;
+                        self.renderer.redraw(&self, RenderMode::Lazy)?;
                     }
                 }
                 Key::ArrowLeft => {
                     if self.buffers.is_empty() { continue }
                     self.cursor.index = self.ensure_cursor_index();
                     if self.cursor.index > 0 {
-                        self.cursor.index = self.move_cursor_left(1)?;
+                        self.cursor.index = self.renderer.move_cursor_left(&self, 1)?;
                     } else if self.cursor.line > 0 {
                         // Move to the end of the previous line.
-                        self.cursor.line = self.move_cursor_up(1)?;
-                        self.cursor.index = self.move_cursor_to_end()?;
+                        self.cursor.line = self.renderer.move_cursor_up(&self, 1)?;
+                        self.cursor.index = self.renderer.move_cursor_to_end(&self)?;
                     }
                 }
                 Key::ArrowRight => {
@@ -132,11 +131,11 @@ impl MultilineTerm {
                     self.cursor.index = self.ensure_cursor_index();
                     let len = self.current_line().len();
                     if self.cursor.index < len {
-                        self.cursor.index = self.move_cursor_right(1)?;
+                        self.cursor.index = self.renderer.move_cursor_right(&self, 1)?;
                     } else if self.cursor.line + 1 < self.buffers.len() {
                         // Move to the beginning of the next line.
-                        self.cursor.line = self.move_cursor_down(1)?;
-                        self.cursor.index = self.move_cursor_to_start()?;
+                        self.cursor.line = self.renderer.move_cursor_down(&self, 1)?;
+                        self.cursor.index = self.renderer.move_cursor_to_start(&self)?;
                     }
                 }
                 Key::Back => {
@@ -145,16 +144,10 @@ impl MultilineTerm {
 
                     if self.cursor.index > 0 {
                         self.cursor.index = self.delete_char_before_cursor();
-                        self.options.render.redraw(&self, RenderMode::Lazy)?;
+                        self.renderer.redraw(&self, RenderMode::Lazy)?;
                     } else if self.cursor.line > 0 {
                         // Backspace at the beginning of the line, so push the contents of
                         // the current line to the line above it, and remove the line.
-                        self.options.render.clear_draw(&self)?;
-
-                        // Pad the top so the prompt can stay anchored to the bottom of the terminal.
-                        if self.options.anchor == AnchorMode::Bottom {
-                            self.options.empty_padding += 1;
-                        }
 
                         // Push the content of the current line to the previous line.
                         let cbuf = self.buffers.remove(self.cursor.line);
@@ -166,22 +159,27 @@ impl MultilineTerm {
                         self.cursor.index = self.current_line_len();
                         self.current_line_mut().push_str(&cbuf);
                     
-                        self.options.render.draw(&self)?;
+                        self.renderer.redraw(&self, RenderMode::Full)?;
+
+                        // Pad the top so the prompt can stay anchored to the bottom of the terminal.
+                        if self.renderer.anchor == AnchorMode::Bottom {
+                            self.renderer.empty_padding += 1;
+                        }
                     }
                 }
                 Key::Char(c) => {
                     self.cursor.index = self.ensure_cursor_index();
                     self.cursor.index = self.insert_char_before_cursor(c);
-                    self.options.render.redraw(&self, RenderMode::Lazy)?;
+                    self.renderer.redraw(&self, RenderMode::Lazy)?;
                 }
                 Key::Escape => {
                     // Quick escape and finish the input.
                     if self.buffers.len() != 0 {
-                        self.move_cursor_to_bottom()?;
+                        self.renderer.move_cursor_to_bottom(&self)?;
                         if self.current_line_len() == 0 {
                             self.buffers.remove(self.cursor.line);
                         } else {
-                            self.options.render.new_line(&self)?;
+                            self.renderer.new_line(&self)?;
                         }
                     }
                     break
@@ -198,7 +196,6 @@ impl MultilineTerm {
                         break
                     } else {
                         self.cursor.index = self.ensure_cursor_index();
-                        self.options.render.clear_draw(&self)?;
                         // Split the input after the cursor.
                         let cursor_idx = self.cursor.index;
                         let cbuf = self.current_line_mut();
@@ -209,14 +206,14 @@ impl MultilineTerm {
                         self.cursor.index = 0;
                         self.cursor.line += 1;
 
+                        self.renderer.redraw(&self, RenderMode::Full)?;
+
                         // Remove the padding if there is space to be taken up.
-                        if self.options.anchor == AnchorMode::Bottom {
-                            if self.options.empty_padding != 0 {
-                                self.options.empty_padding -= 1;
+                        if self.renderer.anchor == AnchorMode::Bottom {
+                            if self.renderer.empty_padding != 0 {
+                                self.renderer.empty_padding -= 1;
                             }
                         }
-
-                        self.options.render.draw(&self)?;
                     }
                 }
                 _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "Unrecognized key input"))?
@@ -257,72 +254,6 @@ impl MultilineTerm {
         idx + 1
     }
 
-    /// Move the current cursor to the last line.
-    #[inline]
-    fn move_cursor_to_bottom(&self) -> io::Result<usize> {
-        if self.buffers.len() == 0 { return Ok(0) }
-        self.inner.move_cursor_down(self.buffers.len() - self.cursor.line - 1)?;
-        Ok(self.buffers.len())
-    }
-
-    /// Move the cursor to the end of the current line.
-    /// This method is not safe to use if the cursor is not at `line:index`,
-    #[inline]
-    fn move_cursor_to_end(&self) -> io::Result<usize> {
-        let len = self.current_line().len();
-        if self.cursor.index > len {
-            self.move_cursor_left(self.cursor.index - len)?;
-        } else if self.cursor.index < len {
-            self.move_cursor_right(len - self.cursor.index)?;
-        }
-        Ok(len)
-    }
-
-    /// Move the cursor to the beginning of the line.
-    #[inline]
-    fn move_cursor_to_start(&self) -> io::Result<usize> {
-        self.move_cursor_left(self.cursor.index)?;
-        Ok(0)
-    }
-
-    /// Move the cursor one line up.
-    #[inline]
-    fn move_cursor_up(&self, n: usize) -> io::Result<usize> {
-        self.inner.move_cursor_up(n)?;
-        if self.cursor.line == 0 {
-            Ok(0)
-        } else {
-            Ok(self.cursor.line - 1)
-        }
-    }
-
-    /// Move the cursor one line down.
-    #[inline]
-    fn move_cursor_down(&self, n: usize) -> io::Result<usize> {
-        self.inner.move_cursor_down(n)?;
-        Ok(self.cursor.line + 1)
-    }
-
-    /// Move the cursor leftward using nondestructive backspaces.
-    #[inline]
-    fn move_cursor_left(&self, n: usize) -> io::Result<usize> {
-        self.inner.move_cursor_left(n)?;
-        if self.cursor.index == 0 {
-            Ok(0)
-        } else {
-            Ok(self.cursor.index - 1)
-        }
-    }
-
-    /// Move the cursor rightward.
-    /// This method is not safe to use if the cursor is not at `line:index`,
-    /// as it draws from the buffer to move forward.
-    #[inline]
-    fn move_cursor_right(&self, n: usize) -> io::Result<usize> {
-        self.inner.move_cursor_right(n)?;
-        Ok(self.cursor.index + 1)
-    }
-
     // Returns an index that ensure that the cursor index is not overflowing the end.
     #[doc(hidden)]
     fn ensure_cursor_index(&self) -> usize {
@@ -336,7 +267,7 @@ pub struct MultilineTermBuilder {
     /// The mode of anchoring for the multiline terminal.
     anchor: AnchorMode,
     /// Mode of rendering
-    render: RenderMode,
+    render_mode: RenderMode,
     /// Initial buffer for the multiline terminal.
     buffers: Vec<String>,
     /// Initial line that the cursor is supposed to be set at.
@@ -356,8 +287,8 @@ impl MultilineTermBuilder {
         self
     }
 
-    pub fn render(mut self, render: RenderMode) -> Self {
-        self.render = render;
+    pub fn render(mut self, render_mode: RenderMode) -> Self {
+        self.render_mode = render_mode;
         self
     }
 
@@ -398,10 +329,13 @@ impl MultilineTermBuilder {
                 line: self.line,
                 index: self.index,
             },
-            options: MultilineTermOptions {
+            renderer: Renderer {
                 anchor: self.anchor,
-                render: self.render,
+                mode: self.render_mode,
                 empty_padding: 0,
+                previous_draw: std::cell::RefCell::new(Default::default()),
+            },
+            options: MultilineTermOptions {
                 gutter: self.gutter
             }
         }
@@ -416,139 +350,16 @@ impl MultilineTermBuilder {
                 line: self.line,
                 index: self.index,
             },
-            options: MultilineTermOptions {
+            renderer: Renderer {
                 anchor: self.anchor,
-                render: self.render,
+                mode: self.render_mode,
                 empty_padding: 0,
+                previous_draw: std::cell::RefCell::new(Default::default()),
+            },
+            options: MultilineTermOptions {
                 gutter: self.gutter
             }
         }
     }
 }
 
-/// The mode of anchoring of the multiline prompt.
-#[allow(dead_code)]
-#[derive(Copy, Clone, Eq, PartialEq)]
-pub enum AnchorMode {
-    /// Default mode of anchoring for the multiline prompt.
-    /// The multiline prompt will always be anchored where it is first printed.
-    InPlace,
-    /// Alternative mode of anchoring for the multiline prompt.
-    /// The multiline prompt will always be anchored at the bottom of the terminal.
-    Bottom,
-}
-
-impl Default for AnchorMode {
-    fn default() -> Self {
-        AnchorMode::InPlace
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RenderMode {
-    /// Allows for proper prompt drawing everytime and
-    /// terminal-wide visual updates to the input.
-    Full,
-    /// Most performant, but may be limited when trying
-    /// to render more advanced options.
-    Lazy,
-}
-
-impl Default for RenderMode {
-    fn default() -> Self {
-        RenderMode::Lazy
-    }
-}
-
-impl RenderMode {
-    /// Draw the prompt.
-    fn draw(self, term: &MultilineTerm) -> io::Result<()> {
-        // Handle empty buffer.
-        if term.buffers.is_empty() {
-            if let Some(f) = &term.options.gutter {
-                term.inner.write_str(&f(0, term))?;
-            }
-            return Ok(())
-        }
-
-        if let AnchorMode::Bottom = term.options.anchor {
-            // Print out the padding.
-            for _ in 0..term.options.empty_padding {
-                self.new_line(term)?;
-            }
-        }
-
-        // Print out the contents.
-        for i in 0..term.buffers.len() {
-            self.draw_line(term, i)?;
-            if i < term.buffers.len() - 1 {
-                // The last line should not have any new-line attached to it.
-                self.new_line(term)?;
-            }
-        }
-
-        // Position the cursor.
-        // At this point the cursor is pointed at the very end of the last line.
-        let last_len = term.buffers.last().unwrap().len();
-        term.move_cursor_up(term.buffers.len() - term.cursor.line - 1)?;
-        if term.cursor.index < last_len {
-            term.move_cursor_left(last_len - term.cursor.index)?;
-        } else if term.cursor.index > last_len && term.cursor.line + 1 != term.buffers.len() {
-            term.move_cursor_right(term.current_line_len().min(term.cursor.index) - last_len)?;
-        }
-
-        Ok(())
-    }
-
-    /// Clear the drawn prompt on the screen.
-    fn clear_draw(self, term: &MultilineTerm) -> io::Result<()> {
-        term.move_cursor_to_bottom()?;
-        term.inner.clear_line()?;
-        if term.buffers.len() != 0 {
-            term.inner.clear_last_lines(term.buffers.len() - 1 + term.options.empty_padding)?;
-        }
-        Ok(())
-    }
-
-    /// Redraw the screen.
-    fn redraw(self, term: &MultilineTerm, hint: RenderMode) -> io::Result<()> {
-        if self == RenderMode::Lazy && hint == RenderMode::Lazy {
-            self.clear_current_line(term)?;
-            self.draw_current_line(term)
-        } else {
-            self.clear_draw(term)?;
-            self.draw(term)
-        }
-    }
-
-    /// Draw the line given an index.
-    /// This method does not move the cursor.
-    fn draw_line(self, term: &MultilineTerm, index: usize) -> io::Result<()> {
-        if let Some(f) = &term.options.gutter {
-            term.inner.write_str(&f(index, term))?;
-        }
-        term.inner.write_str(&term.buffers[index])
-    }
-
-    /// Draw the current line and move the cursor appropriately.
-    fn draw_current_line(self, term: &MultilineTerm) -> io::Result<()> {
-        self.draw_line(term, term.cursor.line)?;
-        // disable this check if you want overflow cursor
-        if term.cursor.index < term.current_line_len() {
-            term.move_cursor_left(term.current_line_len() - term.cursor.index)?;
-        }
-        Ok(())
-    }
-
-    /// Clear the current line on the screen.
-    #[inline]
-    fn clear_current_line(self, term: &MultilineTerm) -> io::Result<()> {
-        term.inner.clear_line()
-    }
-
-    /// Insert a new line on the screen.
-    #[inline]
-    fn new_line(self, term: &MultilineTerm) -> io::Result<()> {
-        term.inner.write_line("")
-    }
-}
