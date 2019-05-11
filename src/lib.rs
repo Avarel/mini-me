@@ -261,7 +261,7 @@ impl MultilineTerm {
     #[inline]
     fn move_cursor_to_bottom(&self) -> io::Result<usize> {
         if self.buffers.len() == 0 { return Ok(0) }
-        self.inner.move_cursor_down(self.buffers.len() - self.cursor.line - 1)?;
+        self.move_cursor_down(self.buffers.len() - self.cursor.line - 1)?;
         Ok(self.buffers.len())
     }
 
@@ -292,7 +292,7 @@ impl MultilineTerm {
         if self.cursor.line == 0 {
             Ok(0)
         } else {
-            Ok(self.cursor.line - 1)
+            Ok(self.cursor.line - n)
         }
     }
 
@@ -300,7 +300,7 @@ impl MultilineTerm {
     #[inline]
     fn move_cursor_down(&self, n: usize) -> io::Result<usize> {
         self.inner.move_cursor_down(n)?;
-        Ok(self.cursor.line + 1)
+        Ok(self.cursor.line + n)
     }
 
     /// Move the cursor leftward using nondestructive backspaces.
@@ -310,7 +310,7 @@ impl MultilineTerm {
         if self.cursor.index == 0 {
             Ok(0)
         } else {
-            Ok(self.cursor.index - 1)
+            Ok(self.cursor.index - n)
         }
     }
 
@@ -320,7 +320,7 @@ impl MultilineTerm {
     #[inline]
     fn move_cursor_right(&self, n: usize) -> io::Result<usize> {
         self.inner.move_cursor_right(n)?;
-        Ok(self.cursor.index + 1)
+        Ok(self.cursor.index + n)
     }
 
     // Returns an index that ensure that the cursor index is not overflowing the end.
