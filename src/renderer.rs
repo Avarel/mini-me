@@ -2,8 +2,13 @@ use std::io;
 use std::cell::{RefCell, Cell};
 use crate::{MultilineTerm, Cursor};
 
-pub struct Renderer {
-    #[doc(hidden)]
+pub trait Renderer {
+    fn draw(&self, term: &MultilineTerm) -> io::Result<()>;
+    fn redraw(&self, term: &MultilineTerm) -> io::Result<()>;
+    fn clear_draw(&self, term: &MultilineTerm) -> io::Result<()>;
+}
+
+pub struct FullRenderer {
     /// Previous draw state.
     pds: Cell<PreviousDrawState>,
     /// Function to draw the prompt.
@@ -25,55 +30,18 @@ impl Default for PreviousDrawState {
     }
 }
 
-/// The mode of anchoring of the multiline prompt.
-#[allow(dead_code)]
-#[derive(Copy, Clone, Eq, PartialEq)]
-pub enum AnchorMode {
-    /// Default mode of anchoring for the multiline prompt.
-    /// The multiline prompt will always be anchored where it is first printed.
-    InPlace,
-    /// Alternative mode of anchoring for the multiline prompt.
-    /// The multiline prompt will always be anchored at the bottom of the terminal.
-    Bottom,
-}
-
-impl Default for AnchorMode {
+impl Default for FullRenderer {
     fn default() -> Self {
-        AnchorMode::InPlace
-    }
-}
-
-impl Default for Renderer {
-    fn default() -> Self {
-        Self {
+        FullRenderer {
             pds: Cell::new(PreviousDrawState::default()),
             gutter: None,
         }
     }
 }
 
-impl Renderer {
-    pub fn with_gutter<F: 'static + Fn(usize, &MultilineTerm) -> String>(f: F) -> Self {
-        Self {
-            pds: Cell::new(PreviousDrawState::default()),
-            gutter: Some(Box::new(f))
-        }
-    }
-
-    #[doc(hidden)]
-    fn update_pds<F: FnOnce(&mut PreviousDrawState)>(&self, f: F) {
-        let mut pds = self.pds();
-        f(&mut pds);
-        self.pds.set(pds);
-    }
-
-    #[doc(hidden)]
-    fn pds(&self) -> PreviousDrawState {
-        self.pds.get()
-    }
-
+impl Renderer for FullRenderer {
     /// Draw the prompt.
-    pub fn draw(&self, term: &MultilineTerm) -> io::Result<()> {
+    fn draw(&self, term: &MultilineTerm) -> io::Result<()> {
         // Handle empty buffer.
         if term.buffers.is_empty() {
             if let Some(f) = &self.gutter {
@@ -101,44 +69,62 @@ impl Renderer {
         self.draw_cursor(term)
     }
 
-    // Position the cursor.
-    // At this point the cursor is pointed at the very end of the last line.
-    pub fn draw_cursor(&self, term: &MultilineTerm) -> io::Result<()> {
-        let pds_index = self.pds().cursor.index;
-        self.move_cursor_up(term, term.buffers.len() - term.cursor.line - 1)?;
-        
-        if term.cursor.index > term.current_line_len() {
-            self.move_cursor_left(term, pds_index - term.current_line_len())
-        } else if term.cursor.index < pds_index {
-            self.move_cursor_left(term, pds_index - term.cursor.index)
-        } else if term.cursor.index > pds_index {
-            self.move_cursor_right(term, term.cursor.index - pds_index)
-        } else {
-            Ok(())
-        }
-    }
-
     /// Clear the drawn prompt on the screen.
-    pub fn clear_draw(&self, term: &MultilineTerm) -> io::Result<()> {
+    fn clear_draw(&self, term: &MultilineTerm) -> io::Result<()> {
         self.move_cursor_to_bottom(term)?;
         term.inner.clear_line()?;
         term.inner.clear_last_lines(self.pds().height - 1)?;
+
+        self.update_pds(|pds| {
+            pds.height = 0;
+            pds.cursor.line = 0;
+            pds.cursor.index = 0;
+        });
+
         Ok(())
     }
 
     /// Redraw the screen.
-    pub fn redraw(&self, term: &MultilineTerm) -> io::Result<()> {
+    fn redraw(&self, term: &MultilineTerm) -> io::Result<()> {
         self.clear_draw(term)?;
         self.draw(term)
+    }
+}
+
+impl FullRenderer {
+    pub fn with_gutter<F: 'static + Fn(usize, &MultilineTerm) -> String>(f: F) -> Self {
+        FullRenderer {
+            pds: Cell::new(PreviousDrawState::default()),
+            gutter: Some(Box::new(f))
+        }
+    }
+
+    #[doc(hidden)]
+    fn update_pds<F: FnOnce(&mut PreviousDrawState)>(&self, f: F) {
+        let mut pds = self.pds();
+        f(&mut pds);
+        self.pds.set(pds);
+    }
+
+    #[doc(hidden)]
+    fn pds(&self) -> PreviousDrawState {
+        self.pds.get()
+    }
+
+    // Position the cursor.
+    // At this point the cursor is pointed at the very end of the last line.
+    pub fn draw_cursor(&self, term: &MultilineTerm) -> io::Result<()> {
+        self.move_cursor_to_line(term, term.cursor.line)?;
+        self.move_cursor_to_index(term, term.cursor.index.min(term.current_line_len()))
     }
 
     /// Draw the line given an index.
     /// This method does not move the cursor.
-    pub fn draw_line(&self, term: &MultilineTerm, index: usize) -> io::Result<()> {
+    pub fn draw_line(&self, term: &MultilineTerm, line: usize) -> io::Result<()> {
         if let Some(f) = &self.gutter {
-            term.inner.write_str(&f(index, term))?;
+            term.inner.write_str(&f(line, term))?;
         }
-        term.inner.write_str(&term.buffers[index])
+        term.inner.write_str(&term.buffers[line])
     }
 
     /// Insert a new line on the screen.
@@ -147,10 +133,34 @@ impl Renderer {
         term.inner.write_line("")
     }
 
-        /// Move the current cursor to the last line.
+    /// Move the current cursor to the last line.
     #[inline]
     pub fn move_cursor_to_bottom(&self, term: &MultilineTerm) -> io::Result<()> {
         self.move_cursor_down(term, self.pds().height - self.pds().cursor.line - 1)
+    }
+
+    pub fn move_cursor_to_line(&self, term: &MultilineTerm, line: usize) -> io::Result<()> {
+        let pds_line = self.pds().cursor.line;
+
+        if pds_line > line {
+            self.move_cursor_up(term, pds_line - line)
+        } else if pds_line < line {
+            self.move_cursor_down(term, line - pds_line)
+        } else {
+            Ok(())
+        }
+    }
+
+    pub fn move_cursor_to_index(&self, term: &MultilineTerm, index: usize) -> io::Result<()> {
+        let pds_index = self.pds().cursor.index;
+
+        if index < pds_index {
+            self.move_cursor_left(term, pds_index - index)
+        } else if index > pds_index {
+            self.move_cursor_right(term, index - pds_index)
+        } else {
+            Ok(())
+        }
     }
 
     /// Move the cursor to the end of the current line.
@@ -172,7 +182,6 @@ impl Renderer {
     #[inline]
     pub fn move_cursor_to_start(&self, term: &MultilineTerm) -> io::Result<()> {
         self.move_cursor_left(term, term.cursor.index)?;
-        self.update_pds(|pds| pds.cursor.index = 0);
         Ok(())
     }
 
@@ -207,4 +216,88 @@ impl Renderer {
         self.update_pds(|pds| pds.cursor.index += n);
         Ok(())
     }
+
+    #[inline]
+    pub fn lazy(self) -> LazyRenderer {
+        LazyRenderer {
+            inner: self,
+            pbuf: RefCell::new(Vec::new()),
+        }
+    }
+}
+
+pub struct LazyRenderer {
+    inner: FullRenderer,
+    pbuf: RefCell<Vec<String>>
+}
+
+impl Renderer for LazyRenderer {
+    fn draw(&self, term: &MultilineTerm) -> io::Result<()> {
+        self.inner.draw(term)?;
+        self.pbuf.replace(term.buffers().clone());
+        Ok(())
+    }
+
+    fn redraw(&self, term: &MultilineTerm) -> io::Result<()> {
+        match self.find_diff(term) {
+            Diff::NoChange => Ok(()),
+            Diff::Cursor => self.inner.draw_cursor(term),
+            Diff::SingleLine(line) => {
+                self.inner.move_cursor_to_line(term, line)?;
+                term.inner.clear_line()?;
+                self.inner.draw_line(term, line)?;
+
+                let buf = term.buffers()[line].clone();
+                self.inner.update_pds(|pds| pds.cursor.index = buf.len());
+                self.pbuf.borrow_mut()[line] = buf;
+
+                self.inner.draw_cursor(term)
+            }
+            Diff::MultipleLines => {
+                self.clear_draw(term)?;
+                self.draw(term)
+            }
+        }
+    }
+
+    fn clear_draw(&self, term: &MultilineTerm) -> io::Result<()> {
+        self.pbuf.borrow_mut().clear();
+        self.inner.clear_draw(term)
+    }
+}
+
+impl LazyRenderer {
+    fn find_diff(&self, term: &MultilineTerm) -> Diff {
+        let old = self.pbuf.borrow();
+        let new = term.buffers();
+        
+        if old.len() != new.len() {
+            return Diff::MultipleLines
+        }
+        
+        let mut changes = 0;
+        let mut index = 0;
+
+        for i in 0..old.len() {
+            if old[i] != new[i] {
+                changes += 1;
+                index = i;
+            }
+        }
+
+        match changes {
+            0 if self.inner.pds().cursor != *term.cursor() => Diff::Cursor,
+            0 => Diff::NoChange,
+            1 => Diff::SingleLine(index),
+            _ => Diff::MultipleLines
+        }
+    }
+}
+
+#[derive(Debug)]
+enum Diff {
+    Cursor,
+    NoChange,
+    SingleLine(usize),
+    MultipleLines
 }

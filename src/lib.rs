@@ -2,7 +2,7 @@ pub mod renderer;
 
 use std::io;
 use console::{Term, Key};
-use renderer::Renderer;
+use renderer::{Renderer, FullRenderer};
 
 /// Reexport the console crate.
 pub use console;
@@ -15,7 +15,7 @@ pub struct MultilineTerm {
     inner: Term,
     buffers: Vec<String>,
     cursor: Cursor,
-    renderer: Renderer,
+    renderer: Box<dyn Renderer>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -254,7 +254,7 @@ pub struct MultilineTermBuilder {
     /// Initial index that the cursor is supposed to be set at.
     index: usize,
     /// The renderer.
-    renderer: Renderer,
+    renderer: Option<Box<dyn Renderer>>,
 }
 
 impl MultilineTermBuilder {
@@ -279,34 +279,30 @@ impl MultilineTermBuilder {
         self
     }
 
-    pub fn renderer(mut self, renderer: Renderer) -> Self {
-        self.renderer = renderer;
+    pub fn renderer<R: 'static + Renderer>(mut self, renderer: R) -> Self {
+        self.renderer = Some(Box::new(renderer));
         self
     }
 
     /// Build a multiline terminal targeted to stdout.
     pub fn build_stdout(self) -> MultilineTerm {
-        MultilineTerm {
-            inner: Term::stdout(),
-            buffers: self.buffers,
-            cursor: Cursor {
-                line: self.line,
-                index: self.index,
-            },
-            renderer: self.renderer,
-        }
+        self.build_with_term(Term::stdout())
     }
 
     /// Build a multiline terminal targeted to stderr.
     pub fn build_stderr(self) -> MultilineTerm {
+        self.build_with_term(Term::stderr())
+    }
+
+    fn build_with_term(self, term: Term) -> MultilineTerm {
         MultilineTerm {
-            inner: Term::stderr(),
+            inner: term,
             buffers: self.buffers,
             cursor: Cursor {
                 line: self.line,
                 index: self.index,
             },
-            renderer: self.renderer,
+            renderer: self.renderer.unwrap_or_else(|| Box::new(FullRenderer::default())),
         }
     }
 }
