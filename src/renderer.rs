@@ -8,35 +8,18 @@ pub trait Renderer {
     fn clear_draw(&self, term: &MultilineTerm) -> io::Result<()>;
 }
 
+#[derive(Default)]
 pub struct FullRenderer {
-    /// Previous draw state.
+    #[doc(hidden)]
     pds: Cell<PreviousDrawState>,
     /// Function to draw the prompt.
     gutter: Option<Box<dyn Fn(usize, &MultilineTerm) -> String>>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PreviousDrawState {
     pub height: usize,
     pub cursor: Cursor 
-}
-
-impl Default for PreviousDrawState {
-    fn default() -> Self {
-        Self {
-            height: 0,
-            cursor: Cursor { line: 0, index: 0 },
-        }
-    }
-}
-
-impl Default for FullRenderer {
-    fn default() -> Self {
-        FullRenderer {
-            pds: Cell::new(PreviousDrawState::default()),
-            gutter: None,
-        }
-    }
 }
 
 impl Renderer for FullRenderer {
@@ -216,18 +199,13 @@ impl FullRenderer {
         self.update_pds(|pds| pds.cursor.index += n);
         Ok(())
     }
-
-    #[inline]
-    pub fn lazy(self) -> LazyRenderer {
-        LazyRenderer {
-            inner: self,
-            pbuf: RefCell::new(Vec::new()),
-        }
-    }
 }
 
+#[derive(Default)]
 pub struct LazyRenderer {
+    /// The lazy renderer wraps around a full renderer, using its methods when necessary.
     inner: FullRenderer,
+    #[doc(hidden)]
     pbuf: RefCell<Vec<String>>
 }
 
@@ -241,19 +219,9 @@ impl Renderer for LazyRenderer {
     fn redraw(&self, term: &MultilineTerm) -> io::Result<()> {
         match self.find_diff(term) {
             Diff::NoChange => Ok(()),
-            Diff::Cursor => self.inner.draw_cursor(term),
-            Diff::SingleLine(line) => {
-                self.inner.move_cursor_to_line(term, line)?;
-                term.inner.clear_line()?;
-                self.inner.draw_line(term, line)?;
-
-                let buf = term.buffers()[line].clone();
-                self.inner.update_pds(|pds| pds.cursor.index = buf.len());
-                self.pbuf.borrow_mut()[line] = buf;
-
-                self.inner.draw_cursor(term)
-            }
-            Diff::MultipleLines => {
+            Diff::RedrawCursor => self.inner.draw_cursor(term),
+            Diff::RedrawLine(line) => self.redraw_line(term, line),
+            Diff::RedrawAll => {
                 self.clear_draw(term)?;
                 self.draw(term)
             }
@@ -267,37 +235,56 @@ impl Renderer for LazyRenderer {
 }
 
 impl LazyRenderer {
+    pub fn wrap(renderer: FullRenderer) -> Self {
+        Self {
+            inner: renderer,
+            pbuf: RefCell::new(Vec::new()),
+        }
+    }
+
     fn find_diff(&self, term: &MultilineTerm) -> Diff {
         let old = self.pbuf.borrow();
         let new = term.buffers();
         
         if old.len() != new.len() {
-            return Diff::MultipleLines
+            return Diff::RedrawAll
         }
         
         let mut changes = 0;
-        let mut index = 0;
+        let mut line = 0;
 
         for i in 0..old.len() {
             if old[i] != new[i] {
                 changes += 1;
-                index = i;
+                line = i;
             }
         }
 
         match changes {
-            0 if self.inner.pds().cursor != *term.cursor() => Diff::Cursor,
+            0 if self.inner.pds().cursor != *term.cursor() => Diff::RedrawCursor,
             0 => Diff::NoChange,
-            1 => Diff::SingleLine(index),
-            _ => Diff::MultipleLines
+            1 => Diff::RedrawLine(line),
+            _ => Diff::RedrawAll
         }
+    }
+
+    fn redraw_line(&self, term: &MultilineTerm, line: usize) -> io::Result<()> {
+        self.inner.move_cursor_to_line(term, line)?;
+        term.inner.clear_line()?;
+        self.inner.draw_line(term, line)?;
+
+        let buf = term.buffers()[line].clone();
+        self.inner.update_pds(|pds| pds.cursor.index = buf.len());
+        self.pbuf.borrow_mut()[line] = buf;
+
+        self.inner.draw_cursor(term)
     }
 }
 
 #[derive(Debug)]
 enum Diff {
-    Cursor,
     NoChange,
-    SingleLine(usize),
-    MultipleLines
+    RedrawCursor,
+    RedrawLine(usize),
+    RedrawAll
 }

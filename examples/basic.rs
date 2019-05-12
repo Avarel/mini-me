@@ -1,20 +1,22 @@
 use std::io;
-use multiline_console::console::style;
-use multiline_console::renderer::FullRenderer;
+use multiline_console::renderer::LazyRenderer;
+
+// Basic bare bones example.
+//
+// Sample output:
+//      
+//      Write something cool!
+//      hello there
+//      how are you?
+//      [examples\basic.rs:14] term.read_multiline() = Ok(
+//          "hello there\nhow are you?",
+//      )
 
 fn main() -> io::Result<()> {
-    println!("{} | Write something cool!", style(" >>> ").black().on_green());
+    println!("Write something cool!");
     let term = multiline_console::MultilineTerm::builder()
-        // Print out the gutter.
-        .renderer(FullRenderer::with_gutter(move |i, term| {
-            // Signal that you're supposed to ENTER when the buffer is
-            // empty/has a length of zero in order to submit the response.
-            if term.buffers().is_empty() || i + 1 == term.buffers().len() && term.buffers().last().unwrap().len() == 0 {
-                format!("enter | ")
-            } else {
-                format!("{:>5} | ", i + 1)
-            }
-        }).lazy())
+        // The lazy renderer is much more efficient.
+        .renderer(LazyRenderer::default())
         // Build the prompt.
         .build_stdout();
 

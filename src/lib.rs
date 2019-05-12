@@ -2,7 +2,7 @@ pub mod renderer;
 
 use std::io;
 use console::{Term, Key};
-use renderer::{Renderer, FullRenderer};
+use renderer::{Renderer, LazyRenderer};
 
 /// Reexport the console crate.
 pub use console;
@@ -18,7 +18,7 @@ pub struct MultilineTerm {
     renderer: Box<dyn Renderer>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cursor {
     /// Current line of the cursor.
     pub line: usize,
@@ -302,7 +302,7 @@ impl MultilineTermBuilder {
                 line: self.line,
                 index: self.index,
             },
-            renderer: self.renderer.unwrap_or_else(|| Box::new(FullRenderer::default())),
+            renderer: self.renderer.unwrap_or_else(|| Box::new(LazyRenderer::default())),
         }
     }
 }
