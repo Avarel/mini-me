@@ -111,7 +111,7 @@ impl MultilineTerm {
 
         // Clear the last empty useless line.
         self.renderer.clear_line()?;
-        // self.inner.clear_line()?;
+        self.renderer.flush()?;
 
         // If empty buffer, then return empty string.
         if self.buffers.is_empty() {
@@ -196,28 +196,30 @@ impl MultilineTerm {
                 }
             }
             KeyEvent::Char('p') => {
-                self.renderer.clear_draw(&self)?;
+                self.renderer.clear_draw()?;
+                self.renderer.flush()?;
             }
             KeyEvent::Char('[') => {
                 self.renderer.clear_line()?;
+                self.renderer.flush()?;
             }
             KeyEvent::Char(c) => {
                 self.cursor.index = self.ensure_cursor_index();
                 self.cursor.index = self.insert_char_before_cursor(c);
                 self.renderer.redraw(&self)?;
             }
-            KeyEvent::Esc => {
-                // // Quick escape and finish the input.
-                // if self.buffers.len() != 0 {
-                //     self.renderer.move_cursor_to_bottom(&self)?;
-                //     if self.current_line_len() == 0 {
-                //         self.buffers.remove(self.cursor.line);
-                //     } else {
-                //         self.renderer.new_line(&self)?;
-                //     }
-                // }
-                return Ok(false)
-            }
+            // KeyEvent::Esc => {
+            //     // // Quick escape and finish the input.
+            //     if self.buffers.len() != 0 {
+            //         self.renderer.move_cursor_to_bottom(&self)?;
+            //         if self.current_line_len() == 0 {
+            //             self.buffers.remove(self.cursor.line);
+            //         } else {
+            //             self.renderer.new_line(&self)?;
+            //         }
+            //     }
+            //     return Ok(false)
+            // }
             KeyEvent::Enter => {
                 if self.buffers.len() == 0 {
                     return Ok(false)
@@ -243,7 +245,7 @@ impl MultilineTerm {
                     self.renderer.redraw(&self)?;
                 }
             }
-            _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "Unrecognized key input"))?
+            _ => { /* ignore */ }
         }
         Ok(true)
     }
