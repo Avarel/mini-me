@@ -7,7 +7,7 @@ use renderer::{Renderer, LazyRenderer};
 pub use crossterm;
 
 use crossterm::{
-    input::{input, InputEvent, KeyEvent, MouseButton, MouseEvent},
+    input::{input, InputEvent, KeyEvent},
     screen::RawScreen,
     Result,
 };
@@ -93,6 +93,7 @@ impl MultilineTerm {
     /// The returned result does not include the final empty line or trailing newline.
     pub fn read_multiline(mut self) -> Result<String> {
         self.renderer.draw(&self)?;
+        self.renderer.flush()?;
 
         let _raw = RawScreen::into_raw_mode()?;
         let input = input();
@@ -194,14 +195,6 @@ impl MultilineTerm {
                 
                     self.renderer.redraw(&self)?;
                 }
-            }
-            KeyEvent::Char('p') => {
-                self.renderer.clear_draw()?;
-                self.renderer.flush()?;
-            }
-            KeyEvent::Char('[') => {
-                self.renderer.clear_line()?;
-                self.renderer.flush()?;
             }
             KeyEvent::Char(c) => {
                 self.cursor.index = self.ensure_cursor_index();
