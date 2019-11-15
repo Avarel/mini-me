@@ -49,7 +49,7 @@ impl Renderer for LazyRenderer {
 
     fn clear_line(&self) -> Result<()> {
         self.full.clear_line()?;
-        self.pbuf.borrow_mut()[self.full.pds().cursor.line as usize].clear();
+        self.pbuf.borrow_mut()[self.full.pds().cursor.line].clear();
         Ok(())
     }
 
@@ -99,9 +99,9 @@ impl LazyRenderer {
         self.full.move_cursor_to_line(line)?;
         self.full.draw_line(term, line)?;
 
-        let buf = term.buffers()[line as usize].clone();
+        let buf = term.buffers()[line].clone();
         self.full.update_pds(|pds| pds.cursor.index = buf.len());
-        self.pbuf.borrow_mut()[line as usize] = buf;
+        self.pbuf.borrow_mut()[line] = buf;
 
         self.full.draw_cursor(term)
     }

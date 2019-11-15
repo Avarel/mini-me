@@ -63,7 +63,7 @@ impl MultilineTerm {
         if self.buffers.len() == 0 {
             return "";
         }
-        &self.buffers[self.cursor.line as usize]
+        &self.buffers[self.cursor.line]
     }
 
     /// Get a mutable reference to the current line of the cursor on the buffer.
@@ -77,7 +77,7 @@ impl MultilineTerm {
             return &mut self.buffers[0];
         }
         let line = self.cursor.line;
-        &mut self.buffers[line as usize]
+        &mut self.buffers[line]
     }
 
     /// Read multiple lines of input.
@@ -166,7 +166,7 @@ impl MultilineTerm {
                 } else if self.cursor.line > 0 {
                     // Move to the end of the previous line.
                     self.cursor.line -= 1;
-                    self.cursor.index = self.buffers[self.cursor.line as usize].len();
+                    self.cursor.index = self.buffers[self.cursor.line].len();
                 }
                 self.renderer.redraw(&self)?;
             }
