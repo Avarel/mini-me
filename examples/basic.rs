@@ -1,4 +1,4 @@
-use multiline_console::renderer::LazyRenderer;
+use multiline_console::renderer::{lazy::LazyRenderer};
 use multiline_console::crossterm::Result;
 
 // Basic bare bones example.

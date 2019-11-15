@@ -1,4 +1,4 @@
-use multiline_console::renderer::FullRenderer;
+use multiline_console::renderer::full::FullRenderer;
 use multiline_console::crossterm::{Result, style::{style, Colorize}};
 
 // Example where there is a chevron in the gutter that follows the where the cursor.

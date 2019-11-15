@@ -1,5 +1,6 @@
 use crate::{Cursor, MultilineTerm};
-use std::cell::{Cell, RefCell};
+
+use std::cell::Cell;
 use std::convert::TryInto;
 use std::io::{stdout, Write};
 
@@ -9,13 +10,7 @@ use crossterm::{
     Output, QueueableCommand, Result,
 };
 
-pub trait Renderer {
-    fn draw(&self, term: &MultilineTerm) -> Result<()>;
-    fn redraw(&self, term: &MultilineTerm) -> Result<()>;
-    fn clear_draw(&self) -> Result<()>;
-    fn clear_line(&self) -> Result<()>;
-    fn flush(&self) -> Result<()>;
-}
+use super::Renderer;
 
 #[derive(Default)]
 pub struct FullRenderer {
@@ -27,7 +22,7 @@ pub struct FullRenderer {
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PreviousDrawState {
-    pub height: u16,
+    pub height: usize,
     pub cursor: Cursor,
 }
 
@@ -40,7 +35,7 @@ impl Renderer for FullRenderer {
                 self.write_str(&f(0, term))?;
             }
             self.update_pds(|pds| pds.height = 1);
-            return self.flush()
+            return self.flush();
         }
 
         // Print out the contents.
@@ -55,9 +50,9 @@ impl Renderer for FullRenderer {
         stdout().queue(Clear(ClearType::FromCursorDown))?;
 
         self.update_pds(|pds| {
-            pds.height = term.buffers.len().try_into().unwrap();
-            pds.cursor.line = (term.buffers.len() - 1).try_into().unwrap();
-            pds.cursor.index = (term.buffers.last().unwrap().len()).try_into().unwrap();
+            pds.height = term.buffers.len();
+            pds.cursor.line = term.buffers.len() - 1;
+            pds.cursor.index = term.buffers.last().unwrap().len();
         });
 
         self.draw_cursor(term)?;
@@ -116,14 +111,14 @@ impl FullRenderer {
     }
 
     #[doc(hidden)]
-    fn update_pds<F: FnOnce(&mut PreviousDrawState)>(&self, f: F) {
+    pub(super) fn update_pds<F: FnOnce(&mut PreviousDrawState)>(&self, f: F) {
         let mut pds = self.pds();
         f(&mut pds);
         self.pds.set(pds);
     }
 
     #[doc(hidden)]
-    fn pds(&self) -> PreviousDrawState {
+    pub(super) fn pds(&self) -> PreviousDrawState {
         self.pds.get()
     }
 
@@ -168,7 +163,7 @@ impl FullRenderer {
         self.move_cursor_down(self.pds().height - self.pds().cursor.line - 1)
     }
 
-    pub fn move_cursor_to_line(&self, line: u16) -> Result<()> {
+    pub fn move_cursor_to_line(&self, line: usize) -> Result<()> {
         let pds_line = self.pds().cursor.line;
 
         if pds_line > line {
@@ -180,7 +175,7 @@ impl FullRenderer {
         }
     }
 
-    pub fn move_cursor_to_index(&self, index: u16) -> Result<()> {
+    pub fn move_cursor_to_index(&self, index: usize) -> Result<()> {
         let pds_index = self.pds().cursor.index;
 
         if index < pds_index {
@@ -228,9 +223,9 @@ impl FullRenderer {
 
     /// Move the cursor one line up.
     #[inline]
-    pub fn move_cursor_up(&self, n: u16) -> Result<()> {
+    pub fn move_cursor_up(&self, n: usize) -> Result<()> {
         if n != 0 {
-            stdout().queue(MoveUp(n))?;
+            stdout().queue(MoveUp(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.update_pds(|pds| pds.cursor.line -= n);
         }
         Ok(())
@@ -238,9 +233,9 @@ impl FullRenderer {
 
     /// Move the cursor one line down.
     #[inline]
-    pub fn move_cursor_down(&self, n: u16) -> Result<()> {
+    pub fn move_cursor_down(&self, n: usize) -> Result<()> {
         if n != 0 {
-            stdout().queue(MoveDown(n))?;
+            stdout().queue(MoveDown(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.update_pds(|pds| pds.cursor.line += n);
         }
         Ok(())
@@ -248,9 +243,9 @@ impl FullRenderer {
 
     /// Move the cursor leftward using nondestructive backspaces.
     #[inline]
-    pub fn move_cursor_left(&self, n: u16) -> Result<()> {
+    pub fn move_cursor_left(&self, n: usize) -> Result<()> {
         if n != 0 {
-            stdout().queue(MoveLeft(n))?;
+            stdout().queue(MoveLeft(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.update_pds(|pds| pds.cursor.index -= n);
         }
         Ok(())
@@ -258,120 +253,11 @@ impl FullRenderer {
 
     /// Move the cursor rightward.
     #[inline]
-    pub fn move_cursor_right(&self, n: u16) -> Result<()> {
+    pub fn move_cursor_right(&self, n: usize) -> Result<()> {
         if n != 0 {
-            stdout().queue(MoveRight(n))?;
+            stdout().queue(MoveRight(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.update_pds(|pds| pds.cursor.index += n);
         }
         Ok(())
     }
-}
-
-#[derive(Default)]
-pub struct LazyRenderer {
-    /// The lazy renderer wraps around a full renderer, using its methods when necessary.
-    full: FullRenderer,
-    #[doc(hidden)]
-    pbuf: RefCell<Vec<String>>,
-}
-
-impl Renderer for LazyRenderer {
-    fn draw(&self, term: &MultilineTerm) -> Result<()> {
-        self.full.draw(term)?;
-        if term.buffers().is_empty() {
-            self.pbuf.replace(vec![String::new()]);
-        } else {
-            self.pbuf.replace(term.buffers().clone());
-        }
-        self.flush()
-    }
-
-    fn redraw(&self, term: &MultilineTerm) -> Result<()> {
-        match self.find_diff(term) {
-            Diff::NoChange => Ok(()),
-            Diff::RedrawCursor => {
-                self.full.draw_cursor(term)?;
-                self.flush()
-            }
-            Diff::RedrawLine(line) => {
-                self.redraw_line(term, line.try_into().unwrap())?;
-                self.flush()
-            }
-            Diff::RedrawAll => {
-                stdout().queue(Hide)?;
-                self.full.move_cursor_up(self.full.pds().cursor.line)?;
-                self.draw(term)?;
-                stdout().queue(Show)?;
-                self.flush()
-            }
-        }
-    }
-
-    fn clear_line(&self) -> Result<()> {
-        self.full.clear_line()?;
-        self.pbuf.borrow_mut()[self.full.pds().cursor.line as usize].clear();
-        Ok(())
-    }
-
-    fn clear_draw(&self) -> Result<()> {
-        self.pbuf.borrow_mut().clear();
-        self.full.clear_draw()
-    }
-
-    fn flush(&self) -> Result<()> {
-        self.full.flush()
-    }
-}
-
-impl LazyRenderer {
-    pub fn wrap(renderer: FullRenderer) -> Self {
-        Self {
-            full: renderer,
-            pbuf: RefCell::new(Vec::new()),
-        }
-    }
-
-    fn find_diff(&self, term: &MultilineTerm) -> Diff {
-        let old = self.pbuf.borrow();
-        let new = term.buffers();
-        if old.len() != new.len() {
-            return Diff::RedrawAll;
-        }
-        let mut changes = 0;
-        let mut line = 0;
-
-        for i in 0..old.len() {
-            if old[i] != new[i] {
-                changes += 1;
-                line = i;
-            }
-        }
-
-        match changes {
-            0 if self.full.pds().cursor != *term.cursor() => Diff::RedrawCursor,
-            0 => Diff::NoChange,
-            1 => Diff::RedrawLine(line),
-            _ => Diff::RedrawAll,
-        }
-    }
-
-    fn redraw_line(&self, term: &MultilineTerm, line: u16) -> Result<()> {
-        self.full.move_cursor_to_line(line)?;
-        self.full.draw_line(term, line.try_into().unwrap())?;
-
-        let buf = term.buffers()[line as usize].clone();
-        self.full
-            .update_pds(|pds| pds.cursor.index = buf.len().try_into().unwrap());
-        self.pbuf.borrow_mut()[line as usize] = buf;
-
-        self.full.draw_cursor(term)
-    }
-}
-
-#[derive(Debug)]
-enum Diff {
-    NoChange,
-    RedrawCursor,
-    RedrawLine(usize),
-    RedrawAll,
 }

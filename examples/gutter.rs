@@ -1,4 +1,4 @@
-use multiline_console::renderer::{LazyRenderer, FullRenderer};
+use multiline_console::renderer::{lazy::LazyRenderer, full::FullRenderer};
 use multiline_console::crossterm::{Result, style::{style, Colorize}};
 
 // Example where there is a simple gutter on the side.
