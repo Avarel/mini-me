@@ -1,18 +1,19 @@
 pub mod renderer;
 
 use std::io;
-use console::{Term, Key};
+use std::convert::TryInto;
 use renderer::{Renderer, LazyRenderer};
 
-/// Reexport the console crate.
-pub use console;
+pub use crossterm;
+
+use crossterm::{
+    input::{input, InputEvent, KeyEvent, MouseButton, MouseEvent},
+    screen::RawScreen,
+    Result,
+};
 
 /// Multiline abstraction around a terminal.
-///
-/// This is a wrapper for the `Term` struct in the `console` crate.
 pub struct MultilineTerm {
-    /// Internal `console::term::Term` that this struct wraps around.
-    inner: Term,
     buffers: Vec<String>,
     cursor: Cursor,
     renderer: Box<dyn Renderer>,
@@ -21,9 +22,9 @@ pub struct MultilineTerm {
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cursor {
     /// Current line of the cursor.
-    pub line: usize,
+    pub line: u16,
     /// Current index of the cursor.
-    pub index: usize,
+    pub index: u16,
 }
 
 impl MultilineTerm {
@@ -47,8 +48,8 @@ impl MultilineTerm {
 
     #[doc(hidden)]
     #[inline]
-    fn current_line_len(&self) -> usize {
-        self.current_line().len()
+    fn current_line_len(&self) -> u16 {
+        self.current_line().len().try_into().unwrap()
     }
 
     /// Return the cursor's position.
@@ -64,7 +65,7 @@ impl MultilineTerm {
         if self.buffers.len() == 0 {
             return ""
         }
-        &self.buffers[self.cursor.line]
+        &self.buffers[self.cursor.line as usize]
     }
 
     /// Get a mutable reference to the current line of the cursor on the buffer.
@@ -78,7 +79,7 @@ impl MultilineTerm {
             return &mut self.buffers[0]
         }
         let line = self.cursor.line;
-        &mut self.buffers[line]
+        &mut self.buffers[line as usize]
     }
 
     /// Read multiple lines of input.
@@ -90,121 +91,27 @@ impl MultilineTerm {
     ///   of the current line to the previous line.
     /// 
     /// The returned result does not include the final empty line or trailing newline.
-    pub fn read_multiline(mut self) -> io::Result<String> {
+    pub fn read_multiline(mut self) -> Result<String> {
         self.renderer.draw(&self)?;
+
+        let _raw = RawScreen::into_raw_mode()?;
+        let input = input();
+        let mut sync_stdin = input.read_sync();
+
         loop {
-            match self.inner.read_key()? {
-                Key::ArrowDown => {
-                    if self.buffers.is_empty() { continue }
-                    if self.cursor.line + 1 < self.buffers.len() {
-                        self.cursor.line += 1;
-                        self.renderer.redraw(&self)?;
-                    }
-                }
-                Key::ArrowUp => {
-                    if self.buffers.is_empty() { continue }
-                    if self.cursor.line > 0 {
-                        self.cursor.line -= 1;
-                        self.renderer.redraw(&self)?;
-                    }
-                }
-                Key::ArrowLeft => {
-                    if self.buffers.is_empty() { continue }
-                    self.cursor.index = self.ensure_cursor_index();
-                    if self.cursor.index > 0 {
-                        self.cursor.index -= 1;
-                    } else if self.cursor.line > 0 {
-                        // Move to the end of the previous line.
-                        self.cursor.line -= 1;
-                        self.cursor.index = self.buffers[self.cursor.line].len();
-                    }
-                    self.renderer.redraw(&self)?;
-                }
-                Key::ArrowRight => {
-                    if self.buffers.is_empty() { continue }
-                    self.cursor.index = self.ensure_cursor_index();
-                    let len = self.current_line().len();
-                    if self.cursor.index < len {
-                        self.cursor.index += 1;
-                    } else if self.cursor.line + 1 < self.buffers.len() {
-                        // Move to the beginning of the next line.
-                        self.cursor.line += 1;
-                        self.cursor.index = 0;
-                    }
-                    self.renderer.redraw(&self)?;
-                }
-                Key::Back => {
-                    if self.buffers.is_empty() { continue }
-                    self.cursor.index = self.ensure_cursor_index();
+            let event = sync_stdin.next();
 
-                    if self.cursor.index > 0 {
-                        self.cursor.index = self.delete_char_before_cursor();
-                        self.renderer.redraw(&self)?;
-                    } else if self.cursor.line > 0 {
-                        // Backspace at the beginning of the line, so push the contents of
-                        // the current line to the line above it, and remove the line.
-
-                        // Push the content of the current line to the previous line.
-                        let cbuf = self.buffers.remove(self.cursor.line);
-                        // Change line number.
-                        self.cursor.line -= 1;
-
-                        // The cursor should now be at the end of the previous line
-                        // before appending the contents of the current line.
-                        self.cursor.index = self.current_line_len();
-                        self.current_line_mut().push_str(&cbuf);
-                    
-                        self.renderer.redraw(&self)?;
-                    }
+            if let Some(key_event) = event {
+                match key_event {
+                    InputEvent::Keyboard(k) => if self.process_key_event(k)? { continue } else { break },
+                    _ => {}
                 }
-                Key::Char(c) => {
-                    self.cursor.index = self.ensure_cursor_index();
-                    self.cursor.index = self.insert_char_before_cursor(c);
-                    self.renderer.redraw(&self)?;
-                }
-                Key::Escape => {
-                    // // Quick escape and finish the input.
-                    // if self.buffers.len() != 0 {
-                    //     self.renderer.move_cursor_to_bottom(&self)?;
-                    //     if self.current_line_len() == 0 {
-                    //         self.buffers.remove(self.cursor.line);
-                    //     } else {
-                    //         self.renderer.new_line(&self)?;
-                    //     }
-                    // }
-                    break
-                }
-                Key::Enter => {
-                    if self.buffers.len() == 0 {
-                        break
-                    } else if self.cursor.line + 1 == self.buffers.len() && self.current_line_len() == 0 {
-                        // Enter on the last line of the prompt which is also empty
-                        // finishes the input.
-
-                        // Remove last useless line.
-                        self.buffers.remove(self.cursor.line);
-                        break
-                    } else {
-                        self.cursor.index = self.ensure_cursor_index();
-                        // Split the input after the cursor.
-                        let cursor_idx = self.cursor.index;
-                        let cbuf = self.current_line_mut();
-                        let nbuf = cbuf.split_off(cursor_idx);
-
-                        // Create a new line and move the cursor to the next line.
-                        self.buffers.insert(self.cursor.line + 1, nbuf);
-                        self.cursor.index = 0;
-                        self.cursor.line += 1;
-
-                        self.renderer.redraw(&self)?;
-                    }
-                }
-                _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "Unrecognized key input"))?
-            };
+            }
         }
 
         // Clear the last empty useless line.
-        self.inner.clear_line()?;
+        self.renderer.clear_line()?;
+        // self.inner.clear_line()?;
 
         // If empty buffer, then return empty string.
         if self.buffers.is_empty() {
@@ -222,24 +129,143 @@ impl MultilineTerm {
         Ok(buf)
     }
 
+    /// Return Ok(continue?)
+    fn process_key_event(&mut self, event: KeyEvent) -> Result<bool> {
+        match event {
+            KeyEvent::Down => {
+                if self.buffers.is_empty() { return Ok(true) }
+                if self.cursor.line + 1 < self.buffers.len().try_into().unwrap() {
+                    self.cursor.line += 1;
+                    self.renderer.redraw(&self)?;
+                }
+            }
+            KeyEvent::Up => {
+                if self.buffers.is_empty() { return Ok(true) }
+                if self.cursor.line > 0 {
+                    self.cursor.line -= 1;
+                    self.renderer.redraw(&self)?;
+                }
+            }
+            KeyEvent::Left => {
+                if self.buffers.is_empty() { return Ok(true) }
+                self.cursor.index = self.ensure_cursor_index();
+                if self.cursor.index > 0 {
+                    self.cursor.index -= 1;
+                } else if self.cursor.line > 0 {
+                    // Move to the end of the previous line.
+                    self.cursor.line -= 1;
+                    self.cursor.index = self.buffers[self.cursor.line as usize].len().try_into().unwrap();
+                }
+                self.renderer.redraw(&self)?;
+            }
+            KeyEvent::Right => {
+                if self.buffers.is_empty() { return Ok(true) }
+                self.cursor.index = self.ensure_cursor_index();
+                let len = self.current_line().len().try_into().unwrap();
+                if self.cursor.index < len {
+                    self.cursor.index += 1;
+                } else if self.cursor.line + 1 < self.buffers.len().try_into().unwrap() {
+                    // Move to the beginning of the next line.
+                    self.cursor.line += 1;
+                    self.cursor.index = 0;
+                }
+                self.renderer.redraw(&self)?;
+            }
+            KeyEvent::Backspace => {
+                if self.buffers.is_empty() { return Ok(true) }
+                self.cursor.index = self.ensure_cursor_index();
+
+                if self.cursor.index > 0 {
+                    self.cursor.index = self.delete_char_before_cursor();
+                    self.renderer.redraw(&self)?;
+                } else if self.cursor.line > 0 {
+                    // Backspace at the beginning of the line, so push the contents of
+                    // the current line to the line above it, and remove the line.
+
+                    // Push the content of the current line to the previous line.
+                    let cbuf = self.buffers.remove(self.cursor.line.try_into().unwrap());
+                    // Change line number.
+                    self.cursor.line -= 1;
+
+                    // The cursor should now be at the end of the previous line
+                    // before appending the contents of the current line.
+                    self.cursor.index = self.current_line_len();
+                    self.current_line_mut().push_str(&cbuf);
+                
+                    self.renderer.redraw(&self)?;
+                }
+            }
+            KeyEvent::Char('p') => {
+                self.renderer.clear_draw(&self)?;
+            }
+            KeyEvent::Char('[') => {
+                self.renderer.clear_line()?;
+            }
+            KeyEvent::Char(c) => {
+                self.cursor.index = self.ensure_cursor_index();
+                self.cursor.index = self.insert_char_before_cursor(c);
+                self.renderer.redraw(&self)?;
+            }
+            KeyEvent::Esc => {
+                // // Quick escape and finish the input.
+                // if self.buffers.len() != 0 {
+                //     self.renderer.move_cursor_to_bottom(&self)?;
+                //     if self.current_line_len() == 0 {
+                //         self.buffers.remove(self.cursor.line);
+                //     } else {
+                //         self.renderer.new_line(&self)?;
+                //     }
+                // }
+                return Ok(false)
+            }
+            KeyEvent::Enter => {
+                if self.buffers.len() == 0 {
+                    return Ok(false)
+                } else if self.cursor.line + 1 == self.buffers.len().try_into().unwrap() && self.current_line_len() == 0 {
+                    // Enter on the last line of the prompt which is also empty
+                    // finishes the input.
+
+                    // Remove last useless line.
+                    self.buffers.remove((self.cursor.line).try_into().unwrap());
+                    return Ok(false)
+                } else {
+                    self.cursor.index = self.ensure_cursor_index();
+                    // Split the input after the cursor.
+                    let cursor_idx = self.cursor.index;
+                    let cbuf = self.current_line_mut();
+                    let nbuf = cbuf.split_off((cursor_idx).try_into().unwrap());
+
+                    // Create a new line and move the cursor to the next line.
+                    self.buffers.insert((self.cursor.line + 1).try_into().unwrap(), nbuf);
+                    self.cursor.index = 0;
+                    self.cursor.line += 1;
+
+                    self.renderer.redraw(&self)?;
+                }
+            }
+            _ => Err(io::Error::new(io::ErrorKind::InvalidInput, "Unrecognized key input"))?
+        }
+        Ok(true)
+    }
+
     /// Delete the character before the cursor.
-    fn delete_char_before_cursor(&mut self) -> usize {
+    fn delete_char_before_cursor(&mut self) -> u16 {
         let idx = self.cursor.index;
-        self.current_line_mut().remove(idx - 1);
+        self.current_line_mut().remove((idx - 1).try_into().unwrap());
         idx - 1
     }
 
     /// Insert the character before the cursor.
-    fn insert_char_before_cursor(&mut self, c: char) -> usize {
+    fn insert_char_before_cursor(&mut self, c: char) -> u16 {
         let idx = self.cursor.index;
         let buf = self.current_line_mut();
-        buf.insert(idx, c);
+        buf.insert(idx.try_into().unwrap(), c);
         idx + 1
     }
 
     // Returns an index that ensure that the cursor index is not overflowing the end.
     #[doc(hidden)]
-    fn ensure_cursor_index(&self) -> usize {
+    fn ensure_cursor_index(&self) -> u16 {
         self.cursor.index.min(self.current_line_len())
     }
 }
@@ -250,9 +276,9 @@ pub struct MultilineTermBuilder {
     /// Initial buffer for the multiline terminal.
     buffers: Vec<String>,
     /// Initial line that the cursor is supposed to be set at.
-    line: usize,
+    line: u16,
     /// Initial index that the cursor is supposed to be set at.
-    index: usize,
+    index: u16,
     /// The renderer.
     renderer: Option<Box<dyn Renderer>>,
 }
@@ -267,14 +293,14 @@ impl MultilineTermBuilder {
 
     /// Set what line the cursor will initially start at.
     #[inline]
-    pub fn line(mut self, line: usize) -> Self {
+    pub fn line(mut self, line: u16) -> Self {
         self.line = line;
         self
     }
 
     /// Set what index the cursor will initially start at.
     #[inline]
-    pub fn index(mut self, index: usize) -> Self {
+    pub fn index(mut self, index: u16) -> Self {
         self.index = index;
         self
     }
@@ -286,17 +312,16 @@ impl MultilineTermBuilder {
 
     /// Build a multiline terminal targeted to stdout.
     pub fn build_stdout(self) -> MultilineTerm {
-        self.build_with_term(Term::stdout())
+        self.build_with_term()
     }
 
     /// Build a multiline terminal targeted to stderr.
     pub fn build_stderr(self) -> MultilineTerm {
-        self.build_with_term(Term::stderr())
+        self.build_with_term()
     }
 
-    fn build_with_term(self, term: Term) -> MultilineTerm {
+    fn build_with_term(self) -> MultilineTerm {
         MultilineTerm {
-            inner: term,
             buffers: self.buffers,
             cursor: Cursor {
                 line: self.line,
