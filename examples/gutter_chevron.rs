@@ -16,7 +16,7 @@ fn main() -> Result<()> {
     println!("{} Write something cool!", "  >>>  ".black().on_green());
     let term = multiline_console::MultilineTerm::builder()
         // Create a renderer with a gutter on the side.
-        .renderer(FullRenderer::with_gutter(move |i, term| {
+        .renderer(FullRenderer::with_gutter(&move |i, term| {
             // Signal that you're supposed to ENTER when the buffer is
             // empty/has a length of zero in order to submit the response.
             if term.buffers.is_empty() || i + 1 == term.buffers.len() && term.buffers.last().unwrap().len() == 0 {

@@ -6,17 +6,17 @@ use std::io::{stdout, Write};
 use crossterm::{
     cursor::*,
     terminal::{Clear, ClearType},
-    Output, QueueableCommand, Result,
+    queue, Output, Result,
 };
 
 use super::Renderer;
 
-#[derive(Default)]
 pub struct FullRenderer<'b> {
+    write: &'b mut dyn Write,
     #[doc(hidden)]
     pub(super) pds: PreviousDrawState,
     /// Function to draw the prompt.
-    gutter: Option<Box<dyn 'b + Fn(usize, &RenderData) -> String>>,
+    gutter: Option<&'b dyn Fn(usize, &RenderData) -> String>,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +47,7 @@ impl Renderer for FullRenderer<'_> {
             }
         }
 
-        stdout().queue(Clear(ClearType::FromCursorDown))?;
+        queue!(self.write, Clear(ClearType::FromCursorDown))?;
 
         self.pds.height = term.buffers.len();
         self.pds.cursor.line = term.buffers.len() - 1;
@@ -63,7 +63,7 @@ impl Renderer for FullRenderer<'_> {
         self.clear_line()?;
 
         self.move_cursor_up(self.pds.height - 1)?;
-        stdout().queue(Clear(ClearType::FromCursorDown))?;
+        queue!(self.write, Clear(ClearType::FromCursorDown))?;
 
         self.pds.height = 0;
         self.pds.cursor.line = 0;
@@ -74,7 +74,7 @@ impl Renderer for FullRenderer<'_> {
 
     /// Clear the line on the current cursor.
     fn clear_line(&mut self) -> Result<()> {
-        stdout().queue(Clear(ClearType::CurrentLine))?;
+        queue!(self.write, Clear(ClearType::CurrentLine))?;
         self.cursor_to_lmargin()?;
         
         self.pds.cursor.index = 0;
@@ -84,35 +84,37 @@ impl Renderer for FullRenderer<'_> {
 
     /// Redraw the screen.
     fn redraw(&mut self, term: &RenderData) -> Result<()> {
-        stdout().queue(Hide)?;
+        queue!(self.write, Hide)?;
         self.move_cursor_up(self.pds.cursor.line)?;
         self.draw(term)?;
-        stdout().queue(Show)?;
+        queue!(self.write, Show)?;
 
         self.flush()
     }
 
     fn flush(&mut self) -> Result<()> {
-        stdout().flush()?;
+        self.write.flush()?;
         Ok(())
     }
 }
 
 impl<'a> FullRenderer<'a> {
-    pub fn with_gutter<F: 'a + Fn(usize, &RenderData) -> String>(f: F) -> Self {
+    pub fn with_gutter<F: Fn(usize, &RenderData) -> String>(f: &'a F) -> Self {
+        let out = Box::new(stdout());
         FullRenderer {
+            write: Box::leak(out),
             pds: PreviousDrawState::default(),
-            gutter: Some(Box::new(f)),
+            gutter: Some(f),
         }
     }
 
     fn write_str(&mut self, s: &str) -> Result<()> {
-        stdout().queue(Output(s))?;
+        queue!(self.write, Output(s))?;
         Ok(())
     }
 
     fn write_line(&mut self, s: &str) -> Result<()> {
-        stdout().queue(Output(s))?.queue(Output('\n'))?;
+        queue!(self.write, Output(s), Output('\n'))?;
         Ok(())
     }
 
@@ -135,7 +137,7 @@ impl<'a> FullRenderer<'a> {
         }
 
         self.write_str(&term.buffers[line])?;
-        stdout().queue(Clear(ClearType::UntilNewLine))?;
+        queue!(self.write, Clear(ClearType::UntilNewLine))?;
         Ok(())
     }
 
@@ -199,12 +201,12 @@ impl<'a> FullRenderer<'a> {
 
     /// Move the curser to the terminal left margin.
     #[doc(hidden)]
-    fn cursor_to_lmargin(&self) -> Result<()> {
+    fn cursor_to_lmargin(&mut self) -> Result<()> {
         if let Ok((_, r)) = crossterm::cursor::position() {
-            stdout().queue(MoveTo(0, r))?;
+            queue!(self.write, MoveTo(0, r))?;
         } else {
             // Fallback
-            stdout().queue(MoveLeft(std::u16::MAX))?;
+            queue!(self.write, MoveLeft(std::u16::MAX))?;
         }
         Ok(())
     }
@@ -213,7 +215,7 @@ impl<'a> FullRenderer<'a> {
     #[inline]
     pub fn move_cursor_up(&mut self, n: usize) -> Result<()> {
         if n != 0 {
-            stdout().queue(MoveUp(n.try_into().unwrap_or(std::u16::MAX)))?;
+            queue!(self.write, MoveUp(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.pds.cursor.line -= n;
         }
         Ok(())
@@ -223,7 +225,7 @@ impl<'a> FullRenderer<'a> {
     #[inline]
     pub fn move_cursor_down(&mut self, n: usize) -> Result<()> {
         if n != 0 {
-            stdout().queue(MoveDown(n.try_into().unwrap_or(std::u16::MAX)))?;
+            queue!(self.write, MoveDown(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.pds.cursor.line += n;
         }
         Ok(())
@@ -233,7 +235,7 @@ impl<'a> FullRenderer<'a> {
     #[inline]
     pub fn move_cursor_left(&mut self, n: usize) -> Result<()> {
         if n != 0 {
-            stdout().queue(MoveLeft(n.try_into().unwrap_or(std::u16::MAX)))?;
+            queue!(self.write, MoveLeft(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.pds.cursor.index -= n;
         }
         Ok(())
@@ -243,9 +245,23 @@ impl<'a> FullRenderer<'a> {
     #[inline]
     pub fn move_cursor_right(&mut self, n: usize) -> Result<()> {
         if n != 0 {
-            stdout().queue(MoveRight(n.try_into().unwrap_or(std::u16::MAX)))?;
+            queue!(self.write, MoveRight(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.pds.cursor.index += n;
         }
         Ok(())
+    }
+}
+
+impl Default for FullRenderer<'_> {
+    fn default() -> Self {
+        // Since stdout() lives for the entirety of the process.
+        // This is safe since the handle will always be valid.
+        // The only time where it may die is during shutdown.
+        let out = Box::new(stdout());
+        FullRenderer {
+            write: Box::leak(out),
+            pds: PreviousDrawState::default(),
+            gutter: None,
+        }
     }
 }
