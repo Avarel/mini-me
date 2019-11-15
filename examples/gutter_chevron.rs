@@ -14,7 +14,7 @@ use multiline_console::crossterm::{Result, style::Colorize};
 //      )
 
 fn main() -> Result<()> {
-    println!("{} | Write something cool!", " >>> ".black().on_green());
+    println!("{} | Write something cool!", " >>> ".on_green());
     let term = multiline_console::MultilineTerm::builder()
         // Create a renderer with a gutter on the side.
         .renderer(FullRenderer::with_gutter(move |i, term| {

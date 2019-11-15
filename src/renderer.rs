@@ -1,7 +1,7 @@
 use crate::{Cursor, MultilineTerm};
 use std::cell::{Cell, RefCell};
 use std::convert::TryInto;
-use std::io::{self, stdout, Write};
+use std::io::{stdout, Write};
 
 use crossterm::{
     cursor::*,
@@ -145,7 +145,9 @@ impl FullRenderer {
         if let Some(f) = &self.gutter {
             self.write_str(&f(line, term))?;
         }
-        self.write_str(&term.buffers[line])
+        self.write_str(&term.buffers[line])?;
+        stdout().queue(Clear(ClearType::UntilNewLine))?;
+        Ok(())
     }
 
     /// Insert a new line on the screen.
@@ -206,6 +208,8 @@ impl FullRenderer {
         Ok(())
     }
 
+    /// Move the curser to the terminal left margin.
+    #[doc(hidden)]
     fn cursor_to_lmargin(&self) -> Result<()> {
         if let Ok((_, r)) = crossterm::cursor::position() {
             stdout().queue(MoveTo(0, r))?;
@@ -348,7 +352,6 @@ impl LazyRenderer {
 
     fn redraw_line(&self, term: &MultilineTerm, line: u16) -> Result<()> {
         self.inner.move_cursor_to_line(line)?;
-        self.inner.clear_line()?;
         self.inner.draw_line(term, line.try_into().unwrap())?;
 
         let buf = term.buffers()[line as usize].clone();

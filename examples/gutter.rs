@@ -1,6 +1,6 @@
 use std::io;
 use multiline_console::renderer::{LazyRenderer, FullRenderer};
-use multiline_console::crossterm::{Result, style::{Colorize, SetBackgroundColor, Color}};
+use multiline_console::crossterm::{Result, style::{style, Colorize}};
 
 // Example where there is a simple gutter on the side.
 //
@@ -14,7 +14,7 @@ use multiline_console::crossterm::{Result, style::{Colorize, SetBackgroundColor,
 //      )
 
 fn main() -> Result<()> {
-    println!("        Write something cool!");
+    println!("{} Write something cool!", "  >>>  ".on_green());
     let term = multiline_console::MultilineTerm::builder()
         // Create a lazy renderer (more efficient) that prints out the gutter on the side.
         .renderer(LazyRenderer::wrap(FullRenderer::with_gutter(move |i, term| {
@@ -23,9 +23,8 @@ fn main() -> Result<()> {
             if term.buffers().is_empty() || i + 1 == term.buffers().len() && term.buffers().last().unwrap().len() == 0 {
                 format!("{} ", " enter ".on_green())
             } else {
-                format!("{} ", format!("{} {:>5} {}", SetBackgroundColor(Color::Blue), i + 1, SetBackgroundColor(Color::Reset)))
+                format!("{} ", style(format!(" {:>5} ", i)).on_blue())
             }
-
         })))
         // Build the prompt.
         .build_stdout();
