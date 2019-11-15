@@ -1,6 +1,5 @@
-use std::io;
 use multiline_console::renderer::LazyRenderer;
-use multiline_console::crossterm::{Result, style::Colorize};
+use multiline_console::crossterm::Result;
 
 // Basic bare bones example.
 //
