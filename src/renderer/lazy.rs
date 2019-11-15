@@ -1,33 +1,31 @@
-use crate::MultilineTerm;
-
 use std::cell::RefCell;
 use std::io::stdout;
 
 use crossterm::{cursor::*, QueueableCommand, Result};
 
-use super::{full::FullRenderer, Renderer};
+use super::{full::FullRenderer, Renderer, RenderData};
 
 #[derive(Default)]
-pub struct LazyRenderer {
+pub struct LazyRenderer<'a> {
     /// The lazy renderer wraps around a full renderer, using its methods when necessary.
-    full: FullRenderer,
+    full: FullRenderer<'a>,
     #[doc(hidden)]
     pbuf: RefCell<Vec<String>>,
 }
 
-impl Renderer for LazyRenderer {
-    fn draw(&self, term: &MultilineTerm) -> Result<()> {
+impl Renderer for LazyRenderer<'_> {
+    fn draw(&mut self, term: &RenderData) -> Result<()> {
         self.full.draw(term)?;
-        if term.buffers().is_empty() {
+        if term.buffers.is_empty() {
             self.pbuf.replace(vec![String::new()]);
         } else {
-            self.pbuf.replace(term.buffers().clone());
+            self.pbuf.replace(term.buffers.clone());
         }
         self.flush()
     }
 
-    fn redraw(&self, term: &MultilineTerm) -> Result<()> {
-        match self.find_diff(term) {
+    fn redraw(&mut self, term: &RenderData) -> Result<()> {
+        match self.find_diff(&term) {
             Diff::NoChange => Ok(()),
             Diff::RedrawCursor => {
                 self.full.draw_cursor(term)?;
@@ -39,7 +37,7 @@ impl Renderer for LazyRenderer {
             }
             Diff::RedrawAll => {
                 stdout().queue(Hide)?;
-                self.full.move_cursor_up(self.full.pds().cursor.line)?;
+                self.full.move_cursor_up(self.full.pds.cursor.line)?;
                 self.draw(term)?;
                 stdout().queue(Show)?;
                 self.flush()
@@ -47,33 +45,33 @@ impl Renderer for LazyRenderer {
         }
     }
 
-    fn clear_line(&self) -> Result<()> {
+    fn clear_line(&mut self) -> Result<()> {
         self.full.clear_line()?;
-        self.pbuf.borrow_mut()[self.full.pds().cursor.line].clear();
+        self.pbuf.borrow_mut()[self.full.pds.cursor.line].clear();
         Ok(())
     }
 
-    fn clear_draw(&self) -> Result<()> {
+    fn clear_draw(&mut self) -> Result<()> {
         self.pbuf.borrow_mut().clear();
         self.full.clear_draw()
     }
 
-    fn flush(&self) -> Result<()> {
+    fn flush(&mut self) -> Result<()> {
         self.full.flush()
     }
 }
 
-impl LazyRenderer {
-    pub fn wrap(renderer: FullRenderer) -> Self {
+impl<'b> LazyRenderer<'b> {
+    pub fn wrap(renderer: FullRenderer<'b>) -> Self {
         Self {
             full: renderer,
             pbuf: RefCell::new(Vec::new()),
         }
     }
 
-    fn find_diff(&self, term: &MultilineTerm) -> Diff {
+    fn find_diff(&mut self, term: &&RenderData) -> Diff {
         let old = self.pbuf.borrow();
-        let new = term.buffers();
+        let new = term.buffers;
         if old.len() != new.len() {
             return Diff::RedrawAll;
         }
@@ -88,19 +86,19 @@ impl LazyRenderer {
         }
 
         match changes {
-            0 if self.full.pds().cursor != *term.cursor() => Diff::RedrawCursor,
+            0 if self.full.pds.cursor != *term.cursor => Diff::RedrawCursor,
             0 => Diff::NoChange,
             1 => Diff::RedrawLine(line),
             _ => Diff::RedrawAll,
         }
     }
 
-    fn redraw_line(&self, term: &MultilineTerm, line: usize) -> Result<()> {
+    fn redraw_line(&mut self, term: &RenderData, line: usize) -> Result<()> {
         self.full.move_cursor_to_line(line)?;
         self.full.draw_line(term, line)?;
 
-        let buf = term.buffers()[line].clone();
-        self.full.update_pds(|pds| pds.cursor.index = buf.len());
+        let buf = term.buffers[line].clone();
+        self.full.pds.cursor.index = buf.len();
         self.pbuf.borrow_mut()[line] = buf;
 
         self.full.draw_cursor(term)

@@ -19,7 +19,7 @@ fn main() -> Result<()> {
         .renderer(LazyRenderer::wrap(FullRenderer::with_gutter(move |i, term| {
             // Signal that you're supposed to ENTER when the buffer is
             // empty/has a length of zero in order to submit the response.
-            if term.buffers().is_empty() || i + 1 == term.buffers().len() && term.buffers().last().unwrap().len() == 0 {
+            if term.buffers.is_empty() || i + 1 == term.buffers.len() && term.buffers.last().unwrap().len() == 0 {
                 format!("{} ", " enter ".black().on_green())
             } else {
                 format!("{} ", style(format!(" {:>5} ", i + 1)).on_blue())
@@ -31,3 +31,24 @@ fn main() -> Result<()> {
     dbg!(term.read_multiline())?;
     Ok(())
 }
+
+// pub struct Z {
+//     b: A
+//     z: String,
+// }
+
+// pub struct A {
+
+// }
+
+// impl Z {
+//     fn doz(&mut self) {
+//         self.b.take(&self);
+//     }
+// }
+
+// impl A {
+//     fn take(&mut self, data: &Z) {
+//         println!()
+//     }
+// }
