@@ -98,8 +98,8 @@ impl Renderer for FullRenderer<'_> {
     }
 }
 
-impl<'a> FullRenderer<'a> {
-    pub fn with_gutter<F: Fn(usize, &RenderData) -> String>(f: &'a F) -> Self {
+impl<'w> FullRenderer<'w> {
+    pub fn with_gutter<F: Fn(usize, &RenderData) -> String>(f: &'w F) -> Self {
         let out = Box::new(stdout());
         FullRenderer {
             write: Box::leak(out),

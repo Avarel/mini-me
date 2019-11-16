@@ -61,8 +61,8 @@ impl Renderer for LazyRenderer<'_> {
     }
 }
 
-impl<'b> LazyRenderer<'b> {
-    pub fn wrap(renderer: FullRenderer<'b>) -> Self {
+impl<'w> LazyRenderer<'w> {
+    pub fn wrap(renderer: FullRenderer<'w>) -> Self {
         Self {
             full: renderer,
             pbuf: RefCell::new(Vec::new()),
