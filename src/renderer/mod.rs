@@ -29,4 +29,8 @@ impl RenderData<'_> {
         }
         &self.buffers[self.cursor.line]
     }
+
+    pub fn line(&self, index: usize) -> &str {
+        &self.buffers[index]
+    }
 }

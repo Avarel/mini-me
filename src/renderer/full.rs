@@ -16,7 +16,7 @@ pub struct FullRenderer<'b> {
     #[doc(hidden)]
     pub(super) pds: PreviousDrawState,
     /// Function to draw the prompt.
-    gutter: Option<&'b dyn Fn(usize, &RenderData) -> String>,
+    formatter: Option<&'b dyn Fn(usize, &RenderData) -> String>,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
@@ -30,7 +30,7 @@ impl Renderer for FullRenderer<'_> {
     fn draw(&mut self, term: &RenderData) -> Result<()> {
         // Handle empty buffer.
         if term.buffers.is_empty() {
-            if let Some(f) = &self.gutter {
+            if let Some(f) = &self.formatter {
                 let string = &f(0, term);
                 self.write_str(string)?;
             }
@@ -99,12 +99,25 @@ impl Renderer for FullRenderer<'_> {
 }
 
 impl<'w> FullRenderer<'w> {
-    pub fn with_gutter<F: Fn(usize, &RenderData) -> String>(f: &'w F) -> Self {
-        let out = Box::new(stdout());
+    pub fn render_to(write: &'w mut dyn Write) -> Self {
         FullRenderer {
-            write: Box::leak(out),
-            pds: PreviousDrawState::default(),
-            gutter: Some(f),
+            write,
+            ..Default::default()
+        }
+    }
+
+    pub fn render_with_formatter<F: Fn(usize, &RenderData) -> String>(f: &'w F) -> Self {
+        FullRenderer {
+            formatter: Some(f),
+            ..Default::default()
+        }
+    }
+
+    pub fn render_with_formatter_to<F: Fn(usize, &RenderData) -> String>(write: &'w mut dyn Write, f: &'w F) -> Self {
+        FullRenderer {
+            write,
+            formatter: Some(f),
+            ..Default::default()
         }
     }
 
@@ -130,13 +143,12 @@ impl<'w> FullRenderer<'w> {
     pub fn draw_line(&mut self, term: &RenderData, line: usize) -> Result<()> {
         self.cursor_to_lmargin()?;
 
-
-        if let Some(f) = &self.gutter {
+        if let Some(f) = &self.formatter {
             let string = &f(line, term);
             self.write_str(string)?;
         }
 
-        self.write_str(&term.buffers[line])?;
+        // self.write_str(&term.buffers[line])?;
         queue!(self.write, Clear(ClearType::UntilNewLine))?;
         Ok(())
     }
@@ -261,7 +273,7 @@ impl Default for FullRenderer<'_> {
         FullRenderer {
             write: Box::leak(out),
             pds: PreviousDrawState::default(),
-            gutter: None,
+            formatter: None,
         }
     }
 }

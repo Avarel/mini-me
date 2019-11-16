@@ -11,10 +11,10 @@ use crossterm::{
 };
 
 /// Multiline abstraction around a terminal.
-pub struct MultilineTerm {
+pub struct MultilineTerm<'w> {
     buffers: Vec<String>,
     cursor: Cursor,
-    renderer: Box<dyn Renderer>,
+    renderer: Box<dyn 'w + Renderer>,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,10 +25,10 @@ pub struct Cursor {
     pub index: usize,
 }
 
-impl MultilineTerm {
+impl<'w> MultilineTerm<'w> {
     /// Create a builder for `MultilineTerm`.
     #[inline]
-    pub fn builder() -> MultilineTermBuilder {
+    pub fn builder<'b>() -> MultilineTermBuilder<'b> {
         MultilineTermBuilder::default()
     }
 
@@ -277,7 +277,7 @@ impl MultilineTerm {
 
 /// Builder struct for `MultilineTerm`.
 #[derive(Default)]
-pub struct MultilineTermBuilder {
+pub struct MultilineTermBuilder<'w> {
     /// Initial buffer for the multiline terminal.
     buffers: Vec<String>,
     /// Initial line that the cursor is supposed to be set at.
@@ -285,10 +285,10 @@ pub struct MultilineTermBuilder {
     /// Initial index that the cursor is supposed to be set at.
     index: usize,
     /// The renderer.
-    renderer: Option<Box<dyn Renderer>>,
+    renderer: Option<Box<dyn 'w + Renderer>>,
 }
 
-impl MultilineTermBuilder {
+impl<'w> MultilineTermBuilder<'w> {
     /// Set the buffer that the terminal will be initialized with.
     #[inline]
     pub fn initial_buffers(mut self, buffers: Vec<String>) -> Self {
@@ -310,22 +310,22 @@ impl MultilineTermBuilder {
         self
     }
 
-    pub fn renderer<R: 'static + Renderer>(mut self, renderer: R) -> Self {
+    pub fn renderer<R: 'w + Renderer>(mut self, renderer: R) -> Self {
         self.renderer = Some(Box::new(renderer));
         self
     }
 
     /// Build a multiline terminal targeted to stdout.
-    pub fn build_stdout(self) -> MultilineTerm {
+    pub fn build_stdout(self) -> MultilineTerm<'w> {
         self.build_with_term()
     }
 
     /// Build a multiline terminal targeted to stderr.
-    pub fn build_stderr(self) -> MultilineTerm {
+    pub fn build_stderr(self) -> MultilineTerm<'w> {
         self.build_with_term()
     }
 
-    fn build_with_term(self) -> MultilineTerm {
+    fn build_with_term(self) -> MultilineTerm<'w> {
         MultilineTerm {
             buffers: self.buffers,
             cursor: Cursor {
