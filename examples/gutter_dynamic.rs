@@ -1,5 +1,5 @@
 use multiline_console::renderer::full::FullRenderer;
-use multiline_console::crossterm::{Result, style::{style, Colorize}};
+use multiline_console::crossterm::{Result, style::{self, style, Colorize}};
 
 // Example where there is a chevron in the gutter that follows the where the cursor.
 //
@@ -8,7 +8,7 @@ use multiline_console::crossterm::{Result, style::{style, Colorize}};
 //       >>>  |  Write something cool!
 //          1 |  hello there
 //          2  | how are you?
-//      [examples\gutter_chevron.rs:26] term.read_multiline() = Ok(
+//      [examples\gutter_dynamic.rs:44] term.read_multiline() = Ok(
 //          "hello there\nhow are you?",
 //      )
 
@@ -16,7 +16,7 @@ fn main() -> Result<()> {
     // Redirect our output to stdout (default).
     let mut stdout = std::io::stdout();
     // Print out some prompt using styling options.
-    println!("{} Write something cool!", "  >>>  ".black().on_green());
+    println!("{}  Write something cool!", "  >>>  ".black().on_green());
     let term = multiline_console::MultilineTerm::builder()
         // Render to our stdout.
         // Create a renderer with a formatter that allows for a gutter on the side.
@@ -33,9 +33,9 @@ fn main() -> Result<()> {
                 }
             } else if i == term.cursor.line as usize {
                 // The full renderer allows for a live updating gutter chevron that follows the cursor.
-                format!("{} {}", style(format!("  {:>5} ", i + 1)).on_blue(), term.line(i))
+                format!("{}{} {}", style(format!("  {:>5} ", i + 1)).black().on_grey(), style::SetBackgroundColor(style::Color::DarkGrey), term.line(i))
             } else {
-                format!("{}  {}", style(format!(" {:>5} ", i + 1)).on_blue(), term.line(i))
+                format!("{}  {}", style(format!(" {:>5} ", i + 1)).black().on_grey(), term.line(i))
             }
         })) // No lazy renderer since the prompt gutter must update globally
         // Build the prompt.

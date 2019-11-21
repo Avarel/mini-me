@@ -6,7 +6,7 @@ use std::io::{stdout, Write};
 use crossterm::{
     cursor::*,
     terminal::{Clear, ClearType},
-    queue, Output, Result,
+    queue, Result,
 };
 
 use super::Renderer;
@@ -20,7 +20,7 @@ pub struct FullRenderer<'b> {
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub struct PreviousDrawState {
+pub(super) struct PreviousDrawState {
     pub height: usize,
     pub cursor: Cursor,
 }
@@ -122,12 +122,13 @@ impl<'w> FullRenderer<'w> {
     }
 
     fn write_str(&mut self, s: &str) -> Result<()> {
-        queue!(self.write, Output(s))?;
+        write!(self.write, "{}", s)?;
         Ok(())
     }
 
+    
     fn write_line(&mut self, s: &str) -> Result<()> {
-        queue!(self.write, Output(s), Output('\n'))?;
+        write!(self.write, "{}\n", s)?;
         Ok(())
     }
 

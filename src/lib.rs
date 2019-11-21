@@ -1,6 +1,6 @@
 pub mod renderer;
 
-use renderer::{RenderData, lazy::LazyRenderer, Renderer};
+use renderer::{lazy::LazyRenderer, RenderData, Renderer};
 
 pub use crossterm;
 
@@ -69,10 +69,7 @@ impl<'w> MultilineTerm<'w> {
     }
 
     fn render_data<'b>(buffers: &'b Vec<String>, cursor: &'b Cursor) -> RenderData<'b> {
-        RenderData {
-            buffers,
-            cursor,
-        }
+        RenderData { buffers, cursor }
     }
 
     /// Read multiple lines of input.
@@ -85,7 +82,8 @@ impl<'w> MultilineTerm<'w> {
     ///
     /// The returned result does not include the final empty line or trailing newline.
     pub fn read_multiline(mut self) -> Result<String> {
-        self.renderer.draw(&Self::render_data(&self.buffers, &self.cursor))?;
+        self.renderer
+            .draw(&Self::render_data(&self.buffers, &self.cursor))?;
         self.renderer.flush()?;
 
         let _raw = RawScreen::into_raw_mode()?;
@@ -139,7 +137,8 @@ impl<'w> MultilineTerm<'w> {
                 }
                 if self.cursor.line + 1 < self.buffers.len() {
                     self.cursor.line += 1;
-                    self.renderer.redraw(&Self::render_data(&self.buffers, &self.cursor))?;
+                    self.renderer
+                        .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
                 }
             }
             KeyEvent::Up => {
@@ -148,7 +147,8 @@ impl<'w> MultilineTerm<'w> {
                 }
                 if self.cursor.line > 0 {
                     self.cursor.line -= 1;
-                    self.renderer.redraw(&Self::render_data(&self.buffers, &self.cursor))?;
+                    self.renderer
+                        .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
                 }
             }
             KeyEvent::Left => {
@@ -163,7 +163,8 @@ impl<'w> MultilineTerm<'w> {
                     self.cursor.line -= 1;
                     self.cursor.index = self.buffers[self.cursor.line].len();
                 }
-                self.renderer.redraw(&Self::render_data(&self.buffers, &self.cursor))?;
+                self.renderer
+                    .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
             }
             KeyEvent::Right => {
                 if self.buffers.is_empty() {
@@ -178,7 +179,8 @@ impl<'w> MultilineTerm<'w> {
                     self.cursor.line += 1;
                     self.cursor.index = 0;
                 }
-                self.renderer.redraw(&Self::render_data(&self.buffers, &self.cursor))?;
+                self.renderer
+                    .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
             }
             KeyEvent::Backspace => {
                 if self.buffers.is_empty() {
@@ -188,7 +190,8 @@ impl<'w> MultilineTerm<'w> {
 
                 if self.cursor.index > 0 {
                     self.cursor.index = self.delete_char_before_cursor();
-                    self.renderer.redraw(&Self::render_data(&self.buffers, &self.cursor))?;
+                    self.renderer
+                        .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
                 } else if self.cursor.line > 0 {
                     // Backspace at the beginning of the line, so push the contents of
                     // the current line to the line above it, and remove the line.
@@ -202,14 +205,27 @@ impl<'w> MultilineTerm<'w> {
                     // before appending the contents of the current line.
                     self.cursor.index = self.current_line_len();
                     self.current_line_mut().push_str(&cbuf);
-                    self.renderer.redraw(&Self::render_data(&self.buffers, &self.cursor))?;
+                    self.renderer
+                        .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
                 }
+            }
+            // TODO: Delete key.
+            KeyEvent::Tab => {
+                self.cursor.index = self.ensure_cursor_index();
+                let soft = 4 - self.current_line_len() % 4;
+                for _ in 0..soft {
+                    self.cursor.index = self.insert_char_before_cursor(' ');
+                }
+                self.renderer
+                    .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
             }
             KeyEvent::Char(c) => {
                 self.cursor.index = self.ensure_cursor_index();
                 self.cursor.index = self.insert_char_before_cursor(c);
-                self.renderer.redraw(&Self::render_data(&self.buffers, &self.cursor))?;
+                self.renderer
+                    .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
             }
+            // TODO: Add it back in.
             // KeyEvent::Esc => {
             //     // // Quick escape and finish the input.
             //     if self.buffers.len() != 0 {
@@ -245,7 +261,8 @@ impl<'w> MultilineTerm<'w> {
                     self.cursor.index = 0;
                     self.cursor.line += 1;
 
-                    self.renderer.redraw(&Self::render_data(&self.buffers, &self.cursor))?;
+                    self.renderer
+                        .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
                 }
             }
             _ => { /* ignore */ }
@@ -263,8 +280,7 @@ impl<'w> MultilineTerm<'w> {
     /// Insert the character before the cursor.
     fn insert_char_before_cursor(&mut self, c: char) -> usize {
         let idx = self.cursor.index;
-        let buf = self.current_line_mut();
-        buf.insert(idx, c);
+        self.current_line_mut().insert(idx, c);
         idx + 1
     }
 

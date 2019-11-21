@@ -1,5 +1,5 @@
 use multiline_console::renderer::{lazy::LazyRenderer, full::FullRenderer};
-use multiline_console::crossterm::{Result, style::{style, Colorize}};
+use multiline_console::crossterm::{Result, style::{self, style, Colorize}};
 
 // Example where there is a simple gutter on the side.
 //
@@ -8,7 +8,7 @@ use multiline_console::crossterm::{Result, style::{style, Colorize}};
 //       >>>  | Write something cool!
 //          1 | hello there
 //          2 | how are you?
-//      [examples\gutter.rs:26] term.read_multiline() = Ok(
+//      [examples\gutter_lazy.rs:35] term.read_multiline() = Ok(
 //          "hello there\nhow are you?",
 //      )
 
@@ -26,7 +26,7 @@ fn main() -> Result<()> {
             } else if i + 1 == term.buffers.len() && term.buffers.last().unwrap().len() == 0 {
                 format!("{} {}", " enter ".black().on_green(), term.line(i))
             } else {
-                format!("{} {}", style(format!(" {:>5} ", i + 1)).on_blue(), term.line(i))
+                format!("{}{} {}", style(format!(" {:>5} ", i + 1)).black().on_grey(), style::SetBackgroundColor(style::Color::DarkGrey), term.line(i))
             }
         })))
         // Build the prompt.
@@ -35,24 +35,3 @@ fn main() -> Result<()> {
     dbg!(term.read_multiline())?;
     Ok(())
 }
-
-// pub struct Z {
-//     b: A
-//     z: String,
-// }
-
-// pub struct A {
-
-// }
-
-// impl Z {
-//     fn doz(&mut self) {
-//         self.b.take(&self);
-//     }
-// }
-
-// impl A {
-//     fn take(&mut self, data: &Z) {
-//         println!()
-//     }
-// }
