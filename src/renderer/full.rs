@@ -27,11 +27,11 @@ pub(super) struct PreviousDrawState {
 
 impl Renderer for FullRenderer<'_> {
     /// Draw the prompt.
-    fn draw(&mut self, term: &RenderData) -> Result<()> {
+    fn draw(&mut self, data: &RenderData) -> Result<()> {
         // Handle empty buffer.
-        if term.buffers.is_empty() {
+        if data.buffers.is_empty() {
             if let Some(f) = &self.formatter {
-                let string = &f(0, term);
+                let string = &f(0, data);
                 self.write_str(string)?;
             }
             self.pds.height = 1;
@@ -39,9 +39,9 @@ impl Renderer for FullRenderer<'_> {
         }
 
         // Print out the contents.
-        for i in 0..term.buffers.len() {
-            self.draw_line(term, i)?;
-            if i < term.buffers.len() - 1 {
+        for i in 0..data.buffers.len() {
+            self.draw_line(data, i)?;
+            if i < data.buffers.len() - 1 {
                 // The last line should not have any new-line attached to it.
                 self.new_line()?;
             }
@@ -49,11 +49,11 @@ impl Renderer for FullRenderer<'_> {
 
         queue!(self.write, Clear(ClearType::FromCursorDown))?;
 
-        self.pds.height = term.buffers.len();
-        self.pds.cursor.line = term.buffers.len() - 1;
-        self.pds.cursor.index = term.buffers.last().unwrap().len();
+        self.pds.height = data.buffers.len();
+        self.pds.cursor.line = data.buffers.len() - 1;
+        self.pds.cursor.index = data.buffers.last().unwrap().len();
 
-        self.draw_cursor(term)?;
+        self.draw_cursor(data)?;
         self.flush()
     }
 
@@ -83,10 +83,10 @@ impl Renderer for FullRenderer<'_> {
     }
 
     /// Redraw the screen.
-    fn redraw(&mut self, term: &RenderData) -> Result<()> {
+    fn redraw(&mut self, data: &RenderData) -> Result<()> {
         queue!(self.write, Hide)?;
         self.move_cursor_up(self.pds.cursor.line)?;
-        self.draw(term)?;
+        self.draw(data)?;
         queue!(self.write, Show)?;
 
         self.flush()
@@ -134,21 +134,21 @@ impl<'w> FullRenderer<'w> {
 
     // Position the cursor.
     // At this point the cursor is pointed at the very end of the last line.
-    pub fn draw_cursor(&mut self, term: &RenderData) -> Result<()> {
-        self.move_cursor_to_line(term.cursor.line)?;
-        self.move_cursor_to_index(term.cursor.index.min(term.current_line_len()))
+    pub fn draw_cursor(&mut self, data: &RenderData) -> Result<()> {
+        self.move_cursor_to_line(data.cursor.line)?;
+        self.move_cursor_to_index(data.cursor.index.min(data.current_line().len()))
     }
 
     /// Draw the line given an index.
     /// This method does not move the cursor.
-    pub fn draw_line(&mut self, term: &RenderData, line: usize) -> Result<()> {
+    pub fn draw_line(&mut self, data: &RenderData, line: usize) -> Result<()> {
         self.cursor_to_lmargin()?;
 
         if let Some(f) = &self.formatter {
-            let string = &f(line, term);
+            let string = &f(line, data);
             self.write_str(string)?;
         } else {
-            self.write_str(term.line(line))?;
+            self.write_str(data.line(line))?;
         }
 
         // self.write_str(&term.buffers[line])?;
@@ -195,9 +195,9 @@ impl<'w> FullRenderer<'w> {
     /// Move the cursor to the end of the current line.
     /// This method is not safe to use if the cursor is not at `line:index`,
     #[inline]
-    pub fn move_cursor_to_end(&mut self, term: &RenderData) -> Result<()> {
+    pub fn move_cursor_to_end(&mut self, data: &RenderData) -> Result<()> {
         let pds = self.pds;
-        let len = term.current_line_len();
+        let len = data.current_line().len();
         if pds.cursor.index > len {
             self.move_cursor_left(pds.cursor.index - len)
         } else if pds.cursor.index < len {
@@ -209,8 +209,8 @@ impl<'w> FullRenderer<'w> {
 
     /// Move the cursor to the beginning of the line.
     #[inline]
-    pub fn move_cursor_to_start(&mut self, term: &RenderData) -> Result<()> {
-        self.move_cursor_left(term.cursor.index)?;
+    pub fn move_cursor_to_start(&mut self, data: &RenderData) -> Result<()> {
+        self.move_cursor_left(data.cursor.index)?;
         Ok(())
     }
 

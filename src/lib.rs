@@ -38,12 +38,6 @@ impl<'w> MultilineTerm<'w> {
         &mut self.buffers
     }
 
-    #[doc(hidden)]
-    #[inline]
-    fn current_line_len(&self) -> usize {
-        self.current_line().len()
-    }
-
     /// Get a reference to current line of the cursor on the buffer.
     /// Unlike `current_line_mut`, this function will not allocate a new string
     /// if the buffer is empty, instead returning an empty string.
@@ -64,10 +58,11 @@ impl<'w> MultilineTerm<'w> {
             self.buffers.push(s);
             return &mut self.buffers[0];
         }
-        let line = self.cursor.line;
-        &mut self.buffers[line]
+        &mut self.buffers[self.cursor.line]
     }
 
+    #[doc(hidden)]
+    #[inline]
     fn render_data<'b>(buffers: &'b Vec<String>, cursor: &'b Cursor) -> RenderData<'b> {
         RenderData { buffers, cursor }
     }
@@ -202,7 +197,7 @@ impl<'w> MultilineTerm<'w> {
 
                     // The cursor should now be at the end of the previous line
                     // before appending the contents of the current line.
-                    self.cursor.index = self.current_line_len();
+                    self.cursor.index = self.current_line().len();
                     self.current_line_mut().push_str(&cbuf);
                     self.renderer
                         .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
@@ -211,7 +206,7 @@ impl<'w> MultilineTerm<'w> {
             // TODO: Delete key.
             KeyCode::Tab => {
                 self.cursor.index = self.ensure_cursor_index();
-                let soft = 4 - self.current_line_len() % 4;
+                let soft = 4 - self.current_line().len() % 4;
                 for _ in 0..soft {
                     self.cursor.index = self.insert_char_before_cursor(' ');
                 }
@@ -240,7 +235,7 @@ impl<'w> MultilineTerm<'w> {
             KeyCode::Enter => {
                 if self.buffers.len() == 0 {
                     return Ok(false);
-                } else if self.cursor.line + 1 == self.buffers.len() && self.current_line_len() == 0
+                } else if self.cursor.line + 1 == self.buffers.len() && self.current_line().len() == 0
                 {
                     // Enter on the last line of the prompt which is also empty
                     // finishes the input.
@@ -286,7 +281,7 @@ impl<'w> MultilineTerm<'w> {
     // Returns an index that ensure that the cursor index is not overflowing the end.
     #[doc(hidden)]
     fn ensure_cursor_index(&self) -> usize {
-        self.cursor.index.min(self.current_line_len())
+        self.cursor.index.min(self.current_line().len())
     }
 }
 
@@ -325,7 +320,7 @@ impl<'w> MultilineTermBuilder<'w> {
         self
     }
 
-    pub fn renderer<R: 'w + Renderer>(mut self, renderer: R) -> Self {
+    pub fn renderer(mut self, renderer: impl 'w + Renderer) -> Self {
         self.renderer = Some(Box::new(renderer));
         self
     }
