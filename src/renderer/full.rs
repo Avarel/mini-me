@@ -147,6 +147,8 @@ impl<'w> FullRenderer<'w> {
         if let Some(f) = &self.formatter {
             let string = &f(line, term);
             self.write_str(string)?;
+        } else {
+            self.write_str(term.line(line))?;
         }
 
         // self.write_str(&term.buffers[line])?;

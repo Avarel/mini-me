@@ -5,8 +5,8 @@ use renderer::{lazy::LazyRenderer, RenderData, Renderer};
 pub use crossterm;
 
 use crossterm::{
-    input::{input, InputEvent, KeyEvent},
-    screen::RawScreen,
+    event::{read, Event, KeyEvent, KeyCode},
+    terminal::{enable_raw_mode, disable_raw_mode},
     Result,
 };
 
@@ -86,24 +86,19 @@ impl<'w> MultilineTerm<'w> {
             .draw(&Self::render_data(&self.buffers, &self.cursor))?;
         self.renderer.flush()?;
 
-        let _raw = RawScreen::into_raw_mode()?;
-        let input = input();
-        let mut sync_stdin = input.read_sync();
-
+        enable_raw_mode()?;
+        
         loop {
-            let event = sync_stdin.next();
-
-            if let Some(key_event) = event {
-                match key_event {
-                    InputEvent::Keyboard(k) => {
-                        if self.process_key_event(k)? {
-                            continue;
-                        } else {
-                            break;
-                        }
+            let key_event = read()?;
+            match key_event {
+                Event::Key(k) => {
+                    if self.process_key_event(k)? {
+                        continue;
+                    } else {
+                        break;
                     }
-                    _ => {}
                 }
+                _ => {}
             }
         }
 
@@ -125,13 +120,17 @@ impl<'w> MultilineTerm<'w> {
             buf.push('\n');
             buf.push_str(&s);
         }
+
+        disable_raw_mode()?;
+
         Ok(buf)
     }
 
     /// Return Ok(continue?)
     fn process_key_event(&mut self, event: KeyEvent) -> Result<bool> {
-        match event {
-            KeyEvent::Down => {
+        let code = event.code;
+        match code {
+            KeyCode::Down => {
                 if self.buffers.is_empty() {
                     return Ok(true);
                 }
@@ -141,7 +140,7 @@ impl<'w> MultilineTerm<'w> {
                         .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
                 }
             }
-            KeyEvent::Up => {
+            KeyCode::Up => {
                 if self.buffers.is_empty() {
                     return Ok(true);
                 }
@@ -151,7 +150,7 @@ impl<'w> MultilineTerm<'w> {
                         .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
                 }
             }
-            KeyEvent::Left => {
+            KeyCode::Left => {
                 if self.buffers.is_empty() {
                     return Ok(true);
                 }
@@ -166,7 +165,7 @@ impl<'w> MultilineTerm<'w> {
                 self.renderer
                     .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
             }
-            KeyEvent::Right => {
+            KeyCode::Right => {
                 if self.buffers.is_empty() {
                     return Ok(true);
                 }
@@ -182,7 +181,7 @@ impl<'w> MultilineTerm<'w> {
                 self.renderer
                     .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
             }
-            KeyEvent::Backspace => {
+            KeyCode::Backspace => {
                 if self.buffers.is_empty() {
                     return Ok(true);
                 }
@@ -210,7 +209,7 @@ impl<'w> MultilineTerm<'w> {
                 }
             }
             // TODO: Delete key.
-            KeyEvent::Tab => {
+            KeyCode::Tab => {
                 self.cursor.index = self.ensure_cursor_index();
                 let soft = 4 - self.current_line_len() % 4;
                 for _ in 0..soft {
@@ -219,7 +218,7 @@ impl<'w> MultilineTerm<'w> {
                 self.renderer
                     .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
             }
-            KeyEvent::Char(c) => {
+            KeyCode::Char(c) => {
                 self.cursor.index = self.ensure_cursor_index();
                 self.cursor.index = self.insert_char_before_cursor(c);
                 self.renderer
@@ -238,7 +237,7 @@ impl<'w> MultilineTerm<'w> {
             //     }
             //     return Ok(false)
             // }
-            KeyEvent::Enter => {
+            KeyCode::Enter => {
                 if self.buffers.len() == 0 {
                     return Ok(false);
                 } else if self.cursor.line + 1 == self.buffers.len() && self.current_line_len() == 0

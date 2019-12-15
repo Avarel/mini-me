@@ -14,5 +14,5 @@ name = "multiline_console"
 edition = "2018"
 
 [dependencies]
-crossterm = "0.13.3"
+crossterm = "0.14"
 # console = { git = "https://github.com/Avarel/console" }
