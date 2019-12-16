@@ -13,35 +13,43 @@ use super::Renderer;
 
 pub struct FullRenderer<'b> {
     write: &'b mut dyn Write,
-    #[doc(hidden)]
-    pub(super) pds: PreviousDrawState,
-    /// Function to draw the prompt.
+    pub(super) draw_state: DrawState,
+    /// Formatter.
     formatter: Option<&'b dyn Fn(usize, &RenderData) -> String>,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct PreviousDrawState {
+/// Contains information about the cursor and the height
+/// of the last frame drawn.
+pub(super) struct DrawState {
+    // Initial index of buffer.
+    pub buffer_start: usize,
+    // How much of the buffer drawn.
     pub height: usize,
+    // Position of the cursor RELATIVE TO THE TERMINAL 
+    // to the start of the drawn frame.
     pub cursor: Cursor,
 }
 
 impl Renderer for FullRenderer<'_> {
     /// Draw the prompt.
-    fn draw(&mut self, data: &RenderData) -> Result<()> {
+    fn draw(&mut self, data: RenderData) -> Result<()> {
         // Handle empty buffer.
         if data.buffers.is_empty() {
             if let Some(f) = &self.formatter {
-                let string = &f(0, data);
+                let string = &f(0, &data);
                 self.write_str(string)?;
             }
-            self.pds.height = 1;
+            self.draw_state.height = 1;
             return self.flush();
         }
 
+        let (low, high) = self.calculate_draw_range(&data);
+
         // Print out the contents.
-        for i in 0..data.buffers.len() {
-            self.draw_line(data, i)?;
-            if i < data.buffers.len() - 1 {
+        for i in low..high {
+            self.draw_line(&data, i)?;
+            if i < high - 1 {
                 // The last line should not have any new-line attached to it.
                 self.new_line()?;
             }
@@ -49,12 +57,14 @@ impl Renderer for FullRenderer<'_> {
 
         queue!(self.write, Clear(ClearType::FromCursorDown))?;
 
-        self.pds.height = data.buffers.len();
-        self.pds.cursor.line = data.buffers.len() - 1;
-        self.pds.cursor.index = data.buffers.last().unwrap().len();
+        self.draw_state.buffer_start = low;
+        self.draw_state.height = high - low;
+        self.draw_state.cursor.line = high - low - 1;
+        self.draw_state.cursor.index = data.buffers[high - 1].len();
 
-        self.draw_cursor(data)?;
+        self.draw_cursor(&data)?;
         self.flush()
+        // Ok((low, high))
     }
 
     /// Clear the drawn prompt on the screen.
@@ -62,12 +72,10 @@ impl Renderer for FullRenderer<'_> {
         self.move_cursor_to_bottom()?;
         self.clear_line()?;
 
-        self.move_cursor_up(self.pds.height - 1)?;
+        self.move_cursor_up(self.draw_state.height - 1)?;
         queue!(self.write, Clear(ClearType::FromCursorDown))?;
 
-        self.pds.height = 0;
-        self.pds.cursor.line = 0;
-        self.pds.cursor.index = 0;
+        self.draw_state = DrawState::default();
 
         Ok(())
     }
@@ -77,15 +85,15 @@ impl Renderer for FullRenderer<'_> {
         queue!(self.write, Clear(ClearType::CurrentLine))?;
         self.cursor_to_lmargin()?;
         
-        self.pds.cursor.index = 0;
+        self.draw_state.cursor.index = 0;
 
         Ok(())
     }
 
     /// Redraw the screen.
-    fn redraw(&mut self, data: &RenderData) -> Result<()> {
+    fn redraw(&mut self, data: RenderData) -> Result<()> {
         queue!(self.write, Hide)?;
-        self.move_cursor_up(self.pds.cursor.line)?;
+        self.move_cursor_up(self.draw_state.cursor.line)?;
         self.draw(data)?;
         queue!(self.write, Show)?;
 
@@ -132,8 +140,33 @@ impl<'w> FullRenderer<'w> {
         Ok(())
     }
 
+    fn calculate_draw_range(&self, data: &RenderData) -> (usize, usize) {
+        if let Ok((_, rows)) = crossterm::terminal::size() {
+            // Rows of the terminal.
+            let term_rows: usize = rows.try_into().unwrap();
+            // let draw_rows = draw_rows - 1; Useful? Always leave 1 line on the top.
+            // Rows of the data to draw.
+            let data_rows = data.buffers.len();
+            // Current line of the data.
+            let line = data.cursor.line;
+            if data_rows > term_rows {
+                return if line + term_rows / 2 >= data_rows {
+                    // Anchor to the bottom.
+                    // low = data_rows - term_rows;
+                    (data_rows - term_rows, data.buffers.len())
+                } else if term_rows / 2 > line {
+                    // Anchor to the top.
+                    (0, term_rows)
+                } else {
+                    // Anchor so that the cursor is in the middle of the draw.
+                    (line - term_rows / 2, line + term_rows / 2 + term_rows % 2)
+                }
+            }
+        }
+        (0, data.buffers.len())   
+    }
+
     // Position the cursor.
-    // At this point the cursor is pointed at the very end of the last line.
     pub fn draw_cursor(&mut self, data: &RenderData) -> Result<()> {
         self.move_cursor_to_line(data.cursor.line)?;
         self.move_cursor_to_index(data.cursor.index.min(data.current_line().len()))
@@ -165,11 +198,11 @@ impl<'w> FullRenderer<'w> {
     /// Move the current cursor to the last line.
     #[inline]
     pub fn move_cursor_to_bottom(&mut self) -> Result<()> {
-        self.move_cursor_down(self.pds.height - self.pds.cursor.line - 1)
+        self.move_cursor_down(self.draw_state.height - self.draw_state.cursor.line - 1)
     }
 
     pub fn move_cursor_to_line(&mut self, line: usize) -> Result<()> {
-        let pds_line = self.pds.cursor.line;
+        let pds_line = self.draw_state.cursor.line + self.draw_state.buffer_start;
 
         if pds_line > line {
             self.move_cursor_up(pds_line - line)
@@ -181,27 +214,12 @@ impl<'w> FullRenderer<'w> {
     }
 
     pub fn move_cursor_to_index(&mut self, index: usize) -> Result<()> {
-        let pds_index = self.pds.cursor.index;
+        let pds_index = self.draw_state.cursor.index;
 
         if index < pds_index {
             self.move_cursor_left(pds_index - index)
         } else if index > pds_index {
             self.move_cursor_right(index - pds_index)
-        } else {
-            Ok(())
-        }
-    }
-
-    /// Move the cursor to the end of the current line.
-    /// This method is not safe to use if the cursor is not at `line:index`,
-    #[inline]
-    pub fn move_cursor_to_end(&mut self, data: &RenderData) -> Result<()> {
-        let pds = self.pds;
-        let len = data.current_line().len();
-        if pds.cursor.index > len {
-            self.move_cursor_left(pds.cursor.index - len)
-        } else if pds.cursor.index < len {
-            self.move_cursor_right(len - pds.cursor.index)
         } else {
             Ok(())
         }
@@ -231,7 +249,7 @@ impl<'w> FullRenderer<'w> {
     pub fn move_cursor_up(&mut self, n: usize) -> Result<()> {
         if n != 0 {
             queue!(self.write, MoveUp(n.try_into().unwrap_or(std::u16::MAX)))?;
-            self.pds.cursor.line -= n;
+            self.draw_state.cursor.line -= n;
         }
         Ok(())
     }
@@ -241,7 +259,7 @@ impl<'w> FullRenderer<'w> {
     pub fn move_cursor_down(&mut self, n: usize) -> Result<()> {
         if n != 0 {
             queue!(self.write, MoveDown(n.try_into().unwrap_or(std::u16::MAX)))?;
-            self.pds.cursor.line += n;
+            self.draw_state.cursor.line += n;
         }
         Ok(())
     }
@@ -251,7 +269,7 @@ impl<'w> FullRenderer<'w> {
     pub fn move_cursor_left(&mut self, n: usize) -> Result<()> {
         if n != 0 {
             queue!(self.write, MoveLeft(n.try_into().unwrap_or(std::u16::MAX)))?;
-            self.pds.cursor.index -= n;
+            self.draw_state.cursor.index -= n;
         }
         Ok(())
     }
@@ -261,7 +279,7 @@ impl<'w> FullRenderer<'w> {
     pub fn move_cursor_right(&mut self, n: usize) -> Result<()> {
         if n != 0 {
             queue!(self.write, MoveRight(n.try_into().unwrap_or(std::u16::MAX)))?;
-            self.pds.cursor.index += n;
+            self.draw_state.cursor.index += n;
         }
         Ok(())
     }
@@ -275,7 +293,7 @@ impl Default for FullRenderer<'_> {
         let out = Box::new(stdout());
         FullRenderer {
             write: Box::leak(out),
-            pds: PreviousDrawState::default(),
+            draw_state: DrawState::default(),
             formatter: None,
         }
     }

@@ -78,7 +78,7 @@ impl<'w> MultilineTerm<'w> {
     /// The returned result does not include the final empty line or trailing newline.
     pub fn read_multiline(mut self) -> Result<String> {
         self.renderer
-            .draw(&Self::render_data(&self.buffers, &self.cursor))?;
+            .draw(Self::render_data(&self.buffers, &self.cursor))?;
         self.renderer.flush()?;
 
         enable_raw_mode()?;
@@ -101,6 +101,8 @@ impl<'w> MultilineTerm<'w> {
         self.renderer.clear_line()?;
         self.renderer.flush()?;
 
+        disable_raw_mode()?;
+
         // If empty buffer, then return empty string.
         if self.buffers.is_empty() {
             return Ok(String::new());
@@ -116,8 +118,6 @@ impl<'w> MultilineTerm<'w> {
             buf.push_str(&s);
         }
 
-        disable_raw_mode()?;
-
         Ok(buf)
     }
 
@@ -131,8 +131,7 @@ impl<'w> MultilineTerm<'w> {
                 }
                 if self.cursor.line + 1 < self.buffers.len() {
                     self.cursor.line += 1;
-                    self.renderer
-                        .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
+                    
                 }
             }
             KeyCode::Up => {
@@ -141,8 +140,6 @@ impl<'w> MultilineTerm<'w> {
                 }
                 if self.cursor.line > 0 {
                     self.cursor.line -= 1;
-                    self.renderer
-                        .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
                 }
             }
             KeyCode::Left => {
@@ -157,8 +154,6 @@ impl<'w> MultilineTerm<'w> {
                     self.cursor.line -= 1;
                     self.cursor.index = self.buffers[self.cursor.line].len();
                 }
-                self.renderer
-                    .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
             }
             KeyCode::Right => {
                 if self.buffers.is_empty() {
@@ -173,8 +168,6 @@ impl<'w> MultilineTerm<'w> {
                     self.cursor.line += 1;
                     self.cursor.index = 0;
                 }
-                self.renderer
-                    .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
             }
             KeyCode::Backspace => {
                 if self.buffers.is_empty() {
@@ -184,8 +177,6 @@ impl<'w> MultilineTerm<'w> {
 
                 if self.cursor.index > 0 {
                     self.cursor.index = self.delete_char_before_cursor();
-                    self.renderer
-                        .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
                 } else if self.cursor.line > 0 {
                     // Backspace at the beginning of the line, so push the contents of
                     // the current line to the line above it, and remove the line.
@@ -199,8 +190,6 @@ impl<'w> MultilineTerm<'w> {
                     // before appending the contents of the current line.
                     self.cursor.index = self.current_line().len();
                     self.current_line_mut().push_str(&cbuf);
-                    self.renderer
-                        .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
                 }
             }
             // TODO: Delete key.
@@ -210,14 +199,10 @@ impl<'w> MultilineTerm<'w> {
                 for _ in 0..soft {
                     self.cursor.index = self.insert_char_before_cursor(' ');
                 }
-                self.renderer
-                    .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
             }
             KeyCode::Char(c) => {
                 self.cursor.index = self.ensure_cursor_index();
                 self.cursor.index = self.insert_char_before_cursor(c);
-                self.renderer
-                    .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
             }
             // TODO: Add it back in.
             // KeyEvent::Esc => {
@@ -254,13 +239,11 @@ impl<'w> MultilineTerm<'w> {
                     self.buffers.insert(self.cursor.line + 1, nbuf);
                     self.cursor.index = 0;
                     self.cursor.line += 1;
-
-                    self.renderer
-                        .redraw(&Self::render_data(&self.buffers, &self.cursor))?;
                 }
             }
             _ => { /* ignore */ }
         }
+        self.renderer.redraw(Self::render_data(&self.buffers, &self.cursor))?;
         Ok(true)
     }
 

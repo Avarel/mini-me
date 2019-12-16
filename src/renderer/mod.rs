@@ -5,13 +5,14 @@ pub mod full;
 pub mod lazy;
 
 pub trait Renderer {
-    fn draw(&mut self, data: &RenderData) -> Result<()>;
-    fn redraw(&mut self, data: &RenderData) -> Result<()>;
+    fn draw(&mut self, data: RenderData) -> Result<()>;
+    fn redraw(&mut self, data: RenderData) -> Result<()>;
     fn clear_draw(&mut self) -> Result<()>;
     fn clear_line(&mut self) -> Result<()>;
     fn flush(&mut self) -> Result<()>;
 }
 
+#[derive(Clone, Copy)]
 pub struct RenderData<'b> {
     pub buffers: &'b Vec<String>,
     pub cursor: &'b Cursor,

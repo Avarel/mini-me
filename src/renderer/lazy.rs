@@ -9,35 +9,37 @@ pub struct LazyRenderer<'a> {
     /// The lazy renderer wraps around a full renderer, using its methods when necessary.
     full: FullRenderer<'a>,
     #[doc(hidden)]
+    prange: (usize, usize),
+    #[doc(hidden)]
     pbuf: Vec<String>,
 }
 
 impl Renderer for LazyRenderer<'_> {
-    fn draw(&mut self, term: &RenderData) -> Result<()> {
-        self.full.draw(term)?;
-        if term.buffers.is_empty() {
+    fn draw(&mut self, data: RenderData) -> Result<()> {
+        if data.buffers.is_empty() {
             self.pbuf = vec![String::new()];
         } else {
-            self.pbuf = term.buffers.clone();
+            self.pbuf = data.buffers.clone();
         }
+        self.full.draw(data)?;
         self.flush()
     }
 
-    fn redraw(&mut self, term: &RenderData) -> Result<()> {
-        match self.find_diff(&term) {
+    fn redraw(&mut self, data: RenderData) -> Result<()> {
+        match self.find_diff(&data) {
             Diff::NoChange => Ok(()),
             Diff::RedrawCursor => {
-                self.full.draw_cursor(term)?;
+                self.full.draw_cursor(&data)?;
                 self.flush()
             }
             Diff::RedrawLine(line) => {
-                self.redraw_line(term, line)?;
+                self.redraw_line(&data, line)?;
                 self.flush()
             }
             Diff::RedrawAll => {
                 stdout().queue(Hide)?;
-                self.full.move_cursor_up(self.full.pds.cursor.line)?;
-                self.draw(term)?;
+                self.full.move_cursor_up(self.full.draw_state.cursor.line)?;
+                self.draw(data)?;
                 stdout().queue(Show)?;
                 self.flush()
             }
@@ -46,7 +48,7 @@ impl Renderer for LazyRenderer<'_> {
 
     fn clear_line(&mut self) -> Result<()> {
         self.full.clear_line()?;
-        self.pbuf[self.full.pds.cursor.line].clear();
+        self.pbuf[self.full.draw_state.cursor.line].clear();
         Ok(())
     }
 
@@ -62,13 +64,16 @@ impl Renderer for LazyRenderer<'_> {
 
 impl<'w> LazyRenderer<'w> {
     pub fn wrap(renderer: FullRenderer<'w>) -> Self {
-        Self {
-            full: renderer,
-            pbuf: Vec::new(),
-        }
+        unimplemented!();
+        // Self {
+        //     full: renderer,
+        //     pbuf: Vec::new(),
+        // }
     }
 
-    fn find_diff(&mut self, term: &&RenderData) -> Diff {
+    fn find_diff(&mut self, term: &RenderData) -> Diff {
+        //if self.full
+
         let old = &self.pbuf;
         let new = term.buffers;
         if old.len() != new.len() {
@@ -85,7 +90,7 @@ impl<'w> LazyRenderer<'w> {
         }
 
         match changes {
-            0 if self.full.pds.cursor != *term.cursor => Diff::RedrawCursor,
+            0 if self.full.draw_state.cursor != *term.cursor => Diff::RedrawCursor,
             0 => Diff::NoChange,
             1 => Diff::RedrawLine(line),
             _ => Diff::RedrawAll,
@@ -93,11 +98,15 @@ impl<'w> LazyRenderer<'w> {
     }
 
     fn redraw_line(&mut self, term: &RenderData, line: usize) -> Result<()> {
+        if !(self.full.draw_state.buffer_start..self.full.draw_state.buffer_start+self.full.draw_state.height).contains(&line) {
+            return Ok(());
+        }
+
         self.full.move_cursor_to_line(line)?;
         self.full.draw_line(term, line)?;
 
         let buf = term.buffers[line].clone();
-        self.full.pds.cursor.index = buf.len();
+        self.full.draw_state.cursor.index = buf.len();
         self.pbuf[line] = buf;
 
         self.full.draw_cursor(term)
