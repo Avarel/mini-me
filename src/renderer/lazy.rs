@@ -8,8 +8,8 @@ use super::{full::FullRenderer, Renderer, RenderData};
 pub struct LazyRenderer<'a> {
     /// The lazy renderer wraps around a full renderer, using its methods when necessary.
     full: FullRenderer<'a>,
-    #[doc(hidden)]
-    prange: (usize, usize),
+    // #[doc(hidden)]
+    // prange: (usize, usize),
     #[doc(hidden)]
     pbuf: Vec<String>,
 }

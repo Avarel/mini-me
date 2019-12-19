@@ -308,17 +308,7 @@ impl<'w> MultilineTermBuilder<'w> {
         self
     }
 
-    /// Build a multiline terminal targeted to stdout.
-    pub fn build_stdout(self) -> MultilineTerm<'w> {
-        self.build_with_term()
-    }
-
-    /// Build a multiline terminal targeted to stderr.
-    pub fn build_stderr(self) -> MultilineTerm<'w> {
-        self.build_with_term()
-    }
-
-    fn build_with_term(self) -> MultilineTerm<'w> {
+    pub fn build(self) -> MultilineTerm<'w> {
         MultilineTerm {
             buffers: self.buffers,
             cursor: Cursor {

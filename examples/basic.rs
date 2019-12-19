@@ -18,7 +18,7 @@ fn main() -> Result<()> {
         // The lazy renderer is much more efficient.
         .renderer(LazyRenderer::default())
         // Build the prompt.
-        .build_stdout();
+        .build();
 
     dbg!(term.read_multiline())?;
     Ok(())

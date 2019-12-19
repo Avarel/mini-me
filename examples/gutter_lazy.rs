@@ -30,7 +30,7 @@ fn main() -> Result<()> {
             }
         })))
         // Build the prompt.
-        .build_stdout();
+        .build();
 
     dbg!(term.read_multiline())?;
     Ok(())
