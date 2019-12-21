@@ -5,8 +5,8 @@ use renderer::{lazy::LazyRenderer, RenderData, Renderer};
 pub use crossterm;
 
 use crossterm::{
-    event::{read, Event, KeyEvent, KeyCode},
-    terminal::{enable_raw_mode, disable_raw_mode},
+    event::{read, Event, KeyCode, KeyEvent},
+    terminal::{disable_raw_mode, enable_raw_mode},
     Result,
 };
 
@@ -82,7 +82,6 @@ impl<'w> MultilineTerm<'w> {
         self.renderer.flush()?;
 
         enable_raw_mode()?;
-        
         loop {
             let key_event = read()?;
             match key_event {
@@ -131,7 +130,6 @@ impl<'w> MultilineTerm<'w> {
                 }
                 if self.cursor.line + 1 < self.buffers.len() {
                     self.cursor.line += 1;
-                    
                 }
             }
             KeyCode::Up => {
@@ -220,7 +218,8 @@ impl<'w> MultilineTerm<'w> {
             KeyCode::Enter => {
                 if self.buffers.len() == 0 {
                     return Ok(false);
-                } else if self.cursor.line + 1 == self.buffers.len() && self.current_line().len() == 0
+                } else if self.cursor.line + 1 == self.buffers.len()
+                    && self.current_line().len() == 0
                 {
                     // Enter on the last line of the prompt which is also empty
                     // finishes the input.
@@ -243,7 +242,8 @@ impl<'w> MultilineTerm<'w> {
             }
             _ => { /* ignore */ }
         }
-        self.renderer.redraw(Self::render_data(&self.buffers, &self.cursor))?;
+        self.renderer
+            .redraw(Self::render_data(&self.buffers, &self.cursor))?;
         Ok(true)
     }
 

@@ -5,8 +5,9 @@ use std::io::{stdout, Write};
 
 use crossterm::{
     cursor::*,
+    queue,
     terminal::{Clear, ClearType},
-    queue, Result,
+    Result,
 };
 
 use super::Renderer;
@@ -26,7 +27,7 @@ pub(super) struct DrawState {
     pub buffer_start: usize,
     // How much of the buffer drawn.
     pub height: usize,
-    // Position of the cursor RELATIVE TO THE TERMINAL 
+    // Position of the cursor RELATIVE TO THE TERMINAL
     // to the start of the drawn frame.
     pub cursor: Cursor,
 }
@@ -84,7 +85,6 @@ impl Renderer for FullRenderer<'_> {
     fn clear_line(&mut self) -> Result<()> {
         queue!(self.write, Clear(ClearType::CurrentLine))?;
         self.cursor_to_lmargin()?;
-        
         self.draw_state.cursor.index = 0;
 
         Ok(())
@@ -121,7 +121,10 @@ impl<'w> FullRenderer<'w> {
         }
     }
 
-    pub fn render_with_formatter_to<F: Fn(usize, &RenderData) -> String>(write: &'w mut dyn Write, f: &'w F) -> Self {
+    pub fn render_with_formatter_to<F: Fn(usize, &RenderData) -> String>(
+        write: &'w mut dyn Write,
+        f: &'w F,
+    ) -> Self {
         FullRenderer {
             write,
             formatter: Some(f),
@@ -134,7 +137,6 @@ impl<'w> FullRenderer<'w> {
         Ok(())
     }
 
-    
     fn write_line(&mut self, s: &str) -> Result<()> {
         write!(self.write, "{}\n", s)?;
         Ok(())
@@ -160,10 +162,10 @@ impl<'w> FullRenderer<'w> {
                 } else {
                     // Anchor so that the cursor is in the middle of the draw.
                     (line - term_rows / 2, line + term_rows / 2 + term_rows % 2)
-                }
+                };
             }
         }
-        (0, data.buffers.len())   
+        (0, data.buffers.len())
     }
 
     // Position the cursor.

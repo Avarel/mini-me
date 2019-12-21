@@ -2,7 +2,7 @@ use std::io::stdout;
 
 use crossterm::{cursor::*, QueueableCommand, Result};
 
-use super::{full::FullRenderer, Renderer, RenderData};
+use super::{full::FullRenderer, RenderData, Renderer};
 
 #[derive(Default)]
 pub struct LazyRenderer<'a> {
@@ -98,7 +98,10 @@ impl<'w> LazyRenderer<'w> {
     }
 
     fn redraw_line(&mut self, term: &RenderData, line: usize) -> Result<()> {
-        if !(self.full.draw_state.buffer_start..self.full.draw_state.buffer_start+self.full.draw_state.height).contains(&line) {
+        if !(self.full.draw_state.buffer_start
+            ..self.full.draw_state.buffer_start + self.full.draw_state.height)
+            .contains(&line)
+        {
             return Ok(());
         }
 
