@@ -1,5 +1,5 @@
-use std::io;
-use multiline_console::renderer::LazyRenderer;
+use multiline_console::renderer::{lazy::LazyRenderer};
+use multiline_console::crossterm::Result;
 
 // Basic bare bones example.
 //
@@ -12,13 +12,13 @@ use multiline_console::renderer::LazyRenderer;
 //          "hello there\nhow are you?",
 //      )
 
-fn main() -> io::Result<()> {
+fn main() -> Result<()> {
     println!("Write something cool!");
     let term = multiline_console::MultilineTerm::builder()
         // The lazy renderer is much more efficient.
         .renderer(LazyRenderer::default())
         // Build the prompt.
-        .build_stdout();
+        .build();
 
     dbg!(term.read_multiline())?;
     Ok(())

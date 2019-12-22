@@ -1,5 +1,5 @@
 [package]
-name = "multiline-console"
+name = "multiline-console-bin"
 version = "0.1.0"
 authors = ["Avarel <avarelpm@gmail.com>"]
 repository = "https://github.com/Avarel/multiline-console"
@@ -9,6 +9,10 @@ edition = "2018"
 license = "MIT"
 readme = "README.md"
 
+[lib]
+name = "multiline_console"
+edition = "2018"
+
 [dependencies]
-crossterm = "0.13.3"
-console = { git = "https://github.com/Avarel/console" }
+crossterm = "0.14"
+# console = { git = "https://github.com/Avarel/console" }
