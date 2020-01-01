@@ -5,7 +5,7 @@ use std::io::{stdout, Write};
 
 use crossterm::{
     cursor::*,
-    queue,
+    QueueableCommand,
     terminal::{Clear, ClearType},
     Result,
 };
@@ -52,11 +52,11 @@ impl Renderer for FullRenderer<'_> {
             self.draw_line(&data, i)?;
             if i < high - 1 {
                 // The last line should not have any new-line attached to it.
-                self.new_line()?;
+                self.write_str("\n")?;
             }
         }
 
-        queue!(self.write, Clear(ClearType::FromCursorDown))?;
+        self.write.queue(Clear(ClearType::FromCursorDown))?;
 
         self.draw_state.buffer_start = low;
         self.draw_state.height = high - low;
@@ -74,7 +74,7 @@ impl Renderer for FullRenderer<'_> {
         self.clear_line()?;
 
         self.move_cursor_up(self.draw_state.height - 1)?;
-        queue!(self.write, Clear(ClearType::FromCursorDown))?;
+        self.write.queue(Clear(ClearType::FromCursorDown))?;
 
         self.draw_state = DrawState::default();
 
@@ -83,7 +83,7 @@ impl Renderer for FullRenderer<'_> {
 
     /// Clear the line on the current cursor.
     fn clear_line(&mut self) -> Result<()> {
-        queue!(self.write, Clear(ClearType::CurrentLine))?;
+        self.write.queue(Clear(ClearType::CurrentLine))?;
         self.cursor_to_lmargin()?;
         self.draw_state.cursor.index = 0;
 
@@ -92,10 +92,10 @@ impl Renderer for FullRenderer<'_> {
 
     /// Redraw the screen.
     fn redraw(&mut self, data: RenderData) -> Result<()> {
-        queue!(self.write, Hide)?;
+        self.write.queue(Hide)?;
         self.move_cursor_up(self.draw_state.cursor.line)?;
         self.draw(data)?;
-        queue!(self.write, Show)?;
+        self.write.queue(Show)?;
 
         self.flush()
     }
@@ -137,10 +137,10 @@ impl<'w> FullRenderer<'w> {
         Ok(())
     }
 
-    fn write_line(&mut self, s: &str) -> Result<()> {
-        write!(self.write, "{}\n", s)?;
-        Ok(())
-    }
+    // fn write_line(&mut self, s: &str) -> Result<()> {
+    //     write!(self.write, "{}\n", s)?;`
+    //     Ok(())
+    // }
 
     fn calculate_draw_range(&self, data: &RenderData) -> (usize, usize) {
         if let Ok((_, rows)) = crossterm::terminal::size() {
@@ -179,7 +179,7 @@ impl<'w> FullRenderer<'w> {
     pub fn draw_line(&mut self, data: &RenderData, line: usize) -> Result<()> {
         self.cursor_to_lmargin()?;
 
-        if let Some(f) = &self.formatter {
+        if let Some(f) = self.formatter {
             let string = &f(line, data);
             self.write_str(string)?;
         } else {
@@ -187,14 +187,8 @@ impl<'w> FullRenderer<'w> {
         }
 
         // self.write_str(&term.buffers[line])?;
-        queue!(self.write, Clear(ClearType::UntilNewLine))?;
+        self.write.queue(Clear(ClearType::UntilNewLine))?;
         Ok(())
-    }
-
-    /// Insert a new line on the screen.
-    #[inline]
-    pub fn new_line(&mut self) -> Result<()> {
-        self.write_line("")
     }
 
     /// Move the current cursor to the last line.
@@ -238,10 +232,10 @@ impl<'w> FullRenderer<'w> {
     #[doc(hidden)]
     fn cursor_to_lmargin(&mut self) -> Result<()> {
         if let Ok((_, r)) = crossterm::cursor::position() {
-            queue!(self.write, MoveTo(0, r))?;
+            self.write.queue(MoveTo(0, r))?;
         } else {
             // Fallback
-            queue!(self.write, MoveLeft(std::u16::MAX))?;
+            self.write.queue(MoveLeft(std::u16::MAX))?;
         }
         Ok(())
     }
@@ -250,7 +244,7 @@ impl<'w> FullRenderer<'w> {
     #[inline]
     pub fn move_cursor_up(&mut self, n: usize) -> Result<()> {
         if n != 0 {
-            queue!(self.write, MoveUp(n.try_into().unwrap_or(std::u16::MAX)))?;
+            self.write.queue(MoveUp(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.draw_state.cursor.line -= n;
         }
         Ok(())
@@ -260,7 +254,7 @@ impl<'w> FullRenderer<'w> {
     #[inline]
     pub fn move_cursor_down(&mut self, n: usize) -> Result<()> {
         if n != 0 {
-            queue!(self.write, MoveDown(n.try_into().unwrap_or(std::u16::MAX)))?;
+            self.write.queue(MoveDown(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.draw_state.cursor.line += n;
         }
         Ok(())
@@ -270,7 +264,7 @@ impl<'w> FullRenderer<'w> {
     #[inline]
     pub fn move_cursor_left(&mut self, n: usize) -> Result<()> {
         if n != 0 {
-            queue!(self.write, MoveLeft(n.try_into().unwrap_or(std::u16::MAX)))?;
+            self.write.queue(MoveLeft(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.draw_state.cursor.index -= n;
         }
         Ok(())
@@ -280,7 +274,7 @@ impl<'w> FullRenderer<'w> {
     #[inline]
     pub fn move_cursor_right(&mut self, n: usize) -> Result<()> {
         if n != 0 {
-            queue!(self.write, MoveRight(n.try_into().unwrap_or(std::u16::MAX)))?;
+            self.write.queue(MoveRight(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.draw_state.cursor.index += n;
         }
         Ok(())

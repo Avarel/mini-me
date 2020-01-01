@@ -14,7 +14,7 @@ use multiline_console::crossterm::Result;
 
 fn main() -> Result<()> {
     println!("Write something cool!");
-    let term = multiline_console::MultilineTerm::builder()
+    let term = multiline_console::Editor::builder()
         // The lazy renderer is much more efficient.
         .renderer(LazyRenderer::default())
         // Build the prompt.

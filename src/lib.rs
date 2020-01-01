@@ -5,13 +5,13 @@ use renderer::{lazy::LazyRenderer, RenderData, Renderer};
 pub use crossterm;
 
 use crossterm::{
-    event::{read, Event, KeyCode, KeyEvent},
+    event::{read, Event, KeyCode, KeyEvent, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
     Result,
 };
 
 /// Multiline abstraction around a terminal.
-pub struct MultilineTerm<'w> {
+pub struct Editor<'w> {
     buffers: Vec<String>,
     cursor: Cursor,
     renderer: Box<dyn 'w + Renderer>,
@@ -25,7 +25,7 @@ pub struct Cursor {
     pub index: usize,
 }
 
-impl<'w> MultilineTerm<'w> {
+impl<'w> Editor<'w> {
     /// Create a builder for `MultilineTerm`.
     #[inline]
     pub fn builder<'b>() -> MultilineTermBuilder<'b> {
@@ -125,18 +125,26 @@ impl<'w> MultilineTerm<'w> {
         let code = event.code;
         match code {
             KeyCode::Down => {
-                if self.buffers.is_empty() {
+                // TODO: debate shift
+                if event.modifiers.contains(KeyModifiers::SHIFT) {
+                    self.cursor.line = if self.buffers.len() == 0 {
+                        0
+                    } else {
+                        self.buffers.len() - 1
+                    };
+                } else if self.buffers.is_empty() {
                     return Ok(true);
-                }
-                if self.cursor.line + 1 < self.buffers.len() {
+                } else if self.cursor.line + 1 < self.buffers.len() {
                     self.cursor.line += 1;
                 }
             }
             KeyCode::Up => {
-                if self.buffers.is_empty() {
+                // TODO: debate shift
+                if event.modifiers.contains(KeyModifiers::SHIFT) {
+                    self.cursor.line = 0;
+                } else if self.buffers.is_empty() {
                     return Ok(true);
-                }
-                if self.cursor.line > 0 {
+                } else if self.cursor.line > 0 {
                     self.cursor.line -= 1;
                 }
             }
@@ -144,7 +152,7 @@ impl<'w> MultilineTerm<'w> {
                 if self.buffers.is_empty() {
                     return Ok(true);
                 }
-                self.cursor.index = self.ensure_cursor_index();
+                self.cursor.index = self.clamp_cursor_index();
                 if self.cursor.index > 0 {
                     self.cursor.index -= 1;
                 } else if self.cursor.line > 0 {
@@ -157,7 +165,7 @@ impl<'w> MultilineTerm<'w> {
                 if self.buffers.is_empty() {
                     return Ok(true);
                 }
-                self.cursor.index = self.ensure_cursor_index();
+                self.cursor.index = self.clamp_cursor_index();
                 let len = self.current_line().len();
                 if self.cursor.index < len {
                     self.cursor.index += 1;
@@ -171,7 +179,7 @@ impl<'w> MultilineTerm<'w> {
                 if self.buffers.is_empty() {
                     return Ok(true);
                 }
-                self.cursor.index = self.ensure_cursor_index();
+                self.cursor.index = self.clamp_cursor_index();
 
                 if self.cursor.index > 0 {
                     self.cursor.index = self.delete_char_before_cursor();
@@ -190,30 +198,47 @@ impl<'w> MultilineTerm<'w> {
                     self.current_line_mut().push_str(&cbuf);
                 }
             }
-            // TODO: Delete key.
+            KeyCode::Delete => {
+                if self.buffers.is_empty() {
+                    return Ok(true);
+                }
+                self.cursor.index = self.clamp_cursor_index();
+
+                if self.cursor.index < self.current_line().len() {
+                    self.cursor.index = self.delete_char_after_cursor();
+                } else if self.cursor.line + 1 < self.buffers.len() {
+                    // Push the content of the next line to the this line.
+                    let cbuf = self.buffers.remove(self.cursor.line + 1);
+                    self.current_line_mut().push_str(&cbuf);
+                }
+            }
             KeyCode::Tab => {
-                self.cursor.index = self.ensure_cursor_index();
+                self.cursor.index = self.clamp_cursor_index();
                 let soft = 4 - self.current_line().len() % 4;
                 for _ in 0..soft {
                     self.cursor.index = self.insert_char_before_cursor(' ');
                 }
             }
             KeyCode::Char(c) => {
-                self.cursor.index = self.ensure_cursor_index();
+                self.cursor.index = self.clamp_cursor_index();
                 self.cursor.index = self.insert_char_before_cursor(c);
             }
-            // TODO: Add it back in.
-            // KeyEvent::Esc => {
+            // KeyCode::Esc => {
             //     // // Quick escape and finish the input.
-            //     if self.buffers.len() != 0 {
-            //         self.renderer.move_cursor_to_bottom(&self)?;
-            //         if self.current_line_len() == 0 {
-            //             self.buffers.remove(self.cursor.line);
+
+            //     // Move to the end if cursor is not on last line.
+            //     if self.cursor.line + 1 != self.buffers.len() || self.current_line().len() != 0 {
+            //         self.cursor.line = if self.buffers.len() == 0 {
+            //             0
             //         } else {
-            //             self.renderer.new_line(&self)?;
-            //         }
+            //             self.buffers.len()
+            //         };
             //     }
-            //     return Ok(false)
+                
+            //     self.buffers.push(String::new());
+            //     self.renderer
+            //         .redraw(Self::render_data(&self.buffers, &self.cursor))?;
+            //     return Ok(false);
             // }
             KeyCode::Enter => {
                 if self.buffers.len() == 0 {
@@ -228,7 +253,7 @@ impl<'w> MultilineTerm<'w> {
                     self.buffers.remove(self.cursor.line);
                     return Ok(false);
                 } else {
-                    self.cursor.index = self.ensure_cursor_index();
+                    self.cursor.index = self.clamp_cursor_index();
                     // Split the input after the cursor.
                     let cursor_idx = self.cursor.index;
                     let cbuf = self.current_line_mut();
@@ -247,14 +272,21 @@ impl<'w> MultilineTerm<'w> {
         Ok(true)
     }
 
-    /// Delete the character before the cursor.
+    #[doc(hidden)]
     fn delete_char_before_cursor(&mut self) -> usize {
         let idx = self.cursor.index;
         self.current_line_mut().remove(idx - 1);
         idx - 1
     }
 
-    /// Insert the character before the cursor.
+    #[doc(hidden)]
+    fn delete_char_after_cursor(&mut self) -> usize {
+        let idx = self.cursor.index;
+        self.current_line_mut().remove(idx);
+        idx
+    }
+ 
+    #[doc(hidden)]
     fn insert_char_before_cursor(&mut self, c: char) -> usize {
         let idx = self.cursor.index;
         self.current_line_mut().insert(idx, c);
@@ -263,7 +295,7 @@ impl<'w> MultilineTerm<'w> {
 
     // Returns an index that ensure that the cursor index is not overflowing the end.
     #[doc(hidden)]
-    fn ensure_cursor_index(&self) -> usize {
+    fn clamp_cursor_index(&self) -> usize {
         self.cursor.index.min(self.current_line().len())
     }
 }
@@ -308,8 +340,8 @@ impl<'w> MultilineTermBuilder<'w> {
         self
     }
 
-    pub fn build(self) -> MultilineTerm<'w> {
-        MultilineTerm {
+    pub fn build(self) -> Editor<'w> {
+        Editor {
             buffers: self.buffers,
             cursor: Cursor {
                 line: self.line,

@@ -63,7 +63,7 @@ impl Renderer for LazyRenderer<'_> {
 }
 
 impl<'w> LazyRenderer<'w> {
-    pub fn wrap(renderer: FullRenderer<'w>) -> Self {
+    pub fn wrap(_: FullRenderer<'w>) -> Self {
         unimplemented!();
         // Self {
         //     full: renderer,

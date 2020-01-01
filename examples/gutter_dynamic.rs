@@ -18,7 +18,7 @@ fn main() -> Result<()> {
     let mut lock = stdout.lock();
     // Print out some prompt using styling options.
     println!("{}  Write something cool!", "  >>>  ".black().on_green());
-    let term = multiline_console::MultilineTerm::builder()
+    let term = multiline_console::Editor::builder()
         // Render to our stdout.
         // Create a renderer with a formatter that allows for a gutter on the side.
         .renderer(FullRenderer::render_with_formatter_to(&mut lock, &|i, term| {
