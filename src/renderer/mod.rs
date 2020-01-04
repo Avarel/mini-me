@@ -2,7 +2,6 @@ use crate::Cursor;
 use crossterm::Result;
 
 pub mod full;
-pub mod lazy;
 
 pub trait Renderer {
     fn draw(&mut self, data: RenderData) -> Result<()>;

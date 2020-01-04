@@ -96,8 +96,7 @@ impl Renderer for FullRenderer<'_> {
         self.move_cursor_up(self.draw_state.cursor.line)?;
         self.draw(data)?;
         self.write.queue(Show)?;
-
-        self.flush()
+        Ok(())
     }
 
     fn flush(&mut self) -> Result<()> {

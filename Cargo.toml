@@ -1,5 +1,5 @@
 [package]
-name = "multiline-console-bin"
+name = "in-edit-bin"
 version = "0.1.0"
 authors = ["Avarel <avarelpm@gmail.com>"]
 repository = "https://github.com/Avarel/multiline-console"
@@ -10,7 +10,7 @@ license = "MIT"
 readme = "README.md"
 
 [lib]
-name = "multiline_console"
+name = "in_edit"
 edition = "2018"
 
 [dependencies]

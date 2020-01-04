@@ -1,5 +1,5 @@
-use multiline_console::renderer::{lazy::LazyRenderer};
-use multiline_console::crossterm::Result;
+use in_edit::Editor;
+use in_edit::crossterm::Result;
 
 // Basic bare bones example.
 //
@@ -14,11 +14,8 @@ use multiline_console::crossterm::Result;
 
 fn main() -> Result<()> {
     println!("Write something cool!");
-    let term = multiline_console::Editor::builder()
-        // The lazy renderer is much more efficient.
-        .renderer(LazyRenderer::default())
-        // Build the prompt.
-        .build();
+    // Build the prompt.
+    let term = Editor::builder().build();
 
     dbg!(term.read_multiline())?;
     Ok(())

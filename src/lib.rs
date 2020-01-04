@@ -1,19 +1,20 @@
 pub mod renderer;
+pub mod keybindings;
 
-use renderer::{lazy::LazyRenderer, RenderData, Renderer};
+use renderer::{RenderData, Renderer, full::FullRenderer};
+use keybindings::Keybinding;
 
 pub use crossterm;
 
 use crossterm::{
-    event::{read, Event, KeyCode, KeyEvent, KeyModifiers},
     terminal::{disable_raw_mode, enable_raw_mode},
     Result,
 };
 
 /// Multiline abstraction around a terminal.
 pub struct Editor<'w> {
-    buffers: Vec<String>,
-    cursor: Cursor,
+    pub buffers: Vec<String>,
+    pub cursor: Cursor,
     renderer: Box<dyn 'w + Renderer>,
 }
 
@@ -83,17 +84,16 @@ impl<'w> Editor<'w> {
 
         enable_raw_mode()?;
         loop {
-            let key_event = read()?;
-            match key_event {
-                Event::Key(k) => {
-                    if self.process_key_event(k)? {
-                        continue;
-                    } else {
-                        break;
-                    }
-                }
-                _ => {}
-            }
+            let take_more = keybindings::NormalKeybinding.read(&mut self)?;
+
+            self.renderer.redraw(Self::render_data(&self.buffers, &self.cursor))?;
+            self.renderer.flush()?;
+
+            if take_more {
+                continue;
+            } else {
+                break;
+            }           
         }
 
         // Clear the last empty useless line.
@@ -118,158 +118,6 @@ impl<'w> Editor<'w> {
         }
 
         Ok(buf)
-    }
-
-    /// Return Ok(continue?)
-    fn process_key_event(&mut self, event: KeyEvent) -> Result<bool> {
-        let code = event.code;
-        match code {
-            KeyCode::Down => {
-                // TODO: debate shift
-                if event.modifiers.contains(KeyModifiers::SHIFT) {
-                    self.cursor.line = if self.buffers.len() == 0 {
-                        0
-                    } else {
-                        self.buffers.len() - 1
-                    };
-                } else if self.buffers.is_empty() {
-                    return Ok(true);
-                } else if self.cursor.line + 1 < self.buffers.len() {
-                    self.cursor.line += 1;
-                }
-            }
-            KeyCode::Up => {
-                // TODO: debate shift
-                if event.modifiers.contains(KeyModifiers::SHIFT) {
-                    self.cursor.line = 0;
-                } else if self.buffers.is_empty() {
-                    return Ok(true);
-                } else if self.cursor.line > 0 {
-                    self.cursor.line -= 1;
-                }
-            }
-            KeyCode::Left => {
-                if self.buffers.is_empty() {
-                    return Ok(true);
-                }
-                self.cursor.index = self.clamp_cursor_index();
-                if self.cursor.index > 0 {
-                    self.cursor.index -= 1;
-                } else if self.cursor.line > 0 {
-                    // Move to the end of the previous line.
-                    self.cursor.line -= 1;
-                    self.cursor.index = self.buffers[self.cursor.line].len();
-                }
-            }
-            KeyCode::Right => {
-                if self.buffers.is_empty() {
-                    return Ok(true);
-                }
-                self.cursor.index = self.clamp_cursor_index();
-                let len = self.current_line().len();
-                if self.cursor.index < len {
-                    self.cursor.index += 1;
-                } else if self.cursor.line + 1 < self.buffers.len() {
-                    // Move to the beginning of the next line.
-                    self.cursor.line += 1;
-                    self.cursor.index = 0;
-                }
-            }
-            KeyCode::Backspace => {
-                if self.buffers.is_empty() {
-                    return Ok(true);
-                }
-                self.cursor.index = self.clamp_cursor_index();
-
-                if self.cursor.index > 0 {
-                    self.cursor.index = self.delete_char_before_cursor();
-                } else if self.cursor.line > 0 {
-                    // Backspace at the beginning of the line, so push the contents of
-                    // the current line to the line above it, and remove the line.
-
-                    // Push the content of the current line to the previous line.
-                    let cbuf = self.buffers.remove(self.cursor.line);
-                    // Change line number.
-                    self.cursor.line -= 1;
-
-                    // The cursor should now be at the end of the previous line
-                    // before appending the contents of the current line.
-                    self.cursor.index = self.current_line().len();
-                    self.current_line_mut().push_str(&cbuf);
-                }
-            }
-            KeyCode::Delete => {
-                if self.buffers.is_empty() {
-                    return Ok(true);
-                }
-                self.cursor.index = self.clamp_cursor_index();
-
-                if self.cursor.index < self.current_line().len() {
-                    self.cursor.index = self.delete_char_after_cursor();
-                } else if self.cursor.line + 1 < self.buffers.len() {
-                    // Push the content of the next line to the this line.
-                    let cbuf = self.buffers.remove(self.cursor.line + 1);
-                    self.current_line_mut().push_str(&cbuf);
-                }
-            }
-            KeyCode::Tab => {
-                self.cursor.index = self.clamp_cursor_index();
-                let soft = 4 - self.current_line().len() % 4;
-                for _ in 0..soft {
-                    self.cursor.index = self.insert_char_before_cursor(' ');
-                }
-            }
-            KeyCode::Char(c) => {
-                self.cursor.index = self.clamp_cursor_index();
-                self.cursor.index = self.insert_char_before_cursor(c);
-            }
-            // KeyCode::Esc => {
-            //     // // Quick escape and finish the input.
-
-            //     // Move to the end if cursor is not on last line.
-            //     if self.cursor.line + 1 != self.buffers.len() || self.current_line().len() != 0 {
-            //         self.cursor.line = if self.buffers.len() == 0 {
-            //             0
-            //         } else {
-            //             self.buffers.len()
-            //         };
-            //     }
-                
-            //     self.buffers.push(String::new());
-            //     self.renderer
-            //         .redraw(Self::render_data(&self.buffers, &self.cursor))?;
-            //     return Ok(false);
-            // }
-            KeyCode::Enter => {
-                if self.buffers.len() == 0 {
-                    return Ok(false);
-                } else if self.cursor.line + 1 == self.buffers.len()
-                    && self.current_line().len() == 0
-                {
-                    // Enter on the last line of the prompt which is also empty
-                    // finishes the input.
-
-                    // Remove last useless line.
-                    self.buffers.remove(self.cursor.line);
-                    return Ok(false);
-                } else {
-                    self.cursor.index = self.clamp_cursor_index();
-                    // Split the input after the cursor.
-                    let cursor_idx = self.cursor.index;
-                    let cbuf = self.current_line_mut();
-                    let nbuf = cbuf.split_off(cursor_idx);
-
-                    // Create a new line and move the cursor to the next line.
-                    self.buffers.insert(self.cursor.line + 1, nbuf);
-                    self.cursor.index = 0;
-                    self.cursor.line += 1;
-                }
-            }
-            _ => { /* ignore */ }
-        }
-        self.renderer
-            .redraw(Self::render_data(&self.buffers, &self.cursor))?;
-        Ok(true)
     }
 
     #[doc(hidden)]
@@ -349,7 +197,7 @@ impl<'w> MultilineTermBuilder<'w> {
             },
             renderer: self
                 .renderer
-                .unwrap_or_else(|| Box::new(LazyRenderer::default())),
+                .unwrap_or_else(|| Box::new(FullRenderer::default())),
         }
     }
 }
