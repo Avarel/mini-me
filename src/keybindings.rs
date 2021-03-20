@@ -1,4 +1,4 @@
-use crate::Editor;
+use crate::editor::Editor;
 
 use crossterm::{
     event::{read, Event, KeyCode, KeyEvent, KeyModifiers},
@@ -30,28 +30,28 @@ impl NormalKeybinding {
         match code {
             KeyCode::Down => {
                 if event.modifiers.contains(KeyModifiers::SHIFT) {
-                    editor.cursor.line = if editor.buffers.len() == 0 {
+                    editor.cursor.line = if editor.line_count() == 0 {
                         0
                     } else {
-                        editor.buffers.len() - 1
+                        editor.line_count() - 1
                     };
-                } else if editor.buffers.is_empty() {
+                } else if editor.line_count() == 0 {
                     return Ok(true);
-                } else if editor.cursor.line + 1 < editor.buffers.len() {
+                } else if editor.cursor.line + 1 < editor.line_count() {
                     editor.cursor.line += 1;
                 }
             }
             KeyCode::Up => {
                 if event.modifiers.contains(KeyModifiers::SHIFT) {
                     editor.cursor.line = 0;
-                } else if editor.buffers.is_empty() {
+                } else if editor.line_count() == 0 {
                     return Ok(true);
                 } else if editor.cursor.line > 0 {
                     editor.cursor.line -= 1;
                 }
             }
             KeyCode::Left => {
-                if editor.buffers.is_empty() {
+                if editor.line_count() == 0 {
                     return Ok(true);
                 }
                 editor.cursor.index = editor.clamp_cursor_index();
@@ -60,25 +60,25 @@ impl NormalKeybinding {
                 } else if editor.cursor.line > 0 {
                     // Move to the end of the previous line.
                     editor.cursor.line -= 1;
-                    editor.cursor.index = editor.buffers[editor.cursor.line].len();
+                    editor.cursor.index = editor.current_line().len();
                 }
             }
             KeyCode::Right => {
-                if editor.buffers.is_empty() {
+                if editor.line_count() == 0 {
                     return Ok(true);
                 }
                 editor.cursor.index = editor.clamp_cursor_index();
                 let len = editor.current_line().len();
                 if editor.cursor.index < len {
                     editor.cursor.index += 1;
-                } else if editor.cursor.line + 1 < editor.buffers.len() {
+                } else if editor.cursor.line + 1 < editor.line_count() {
                     // Move to the beginning of the next line.
                     editor.cursor.line += 1;
                     editor.cursor.index = 0;
                 }
             }
             KeyCode::Backspace => {
-                if editor.buffers.is_empty() {
+                if editor.line_count() == 0 {
                     return Ok(true);
                 }
                 editor.cursor.index = editor.clamp_cursor_index();
@@ -90,28 +90,28 @@ impl NormalKeybinding {
                     // the current line to the line above it, and remove the line.
 
                     // Push the content of the current line to the previous line.
-                    let cbuf = editor.buffers.remove(editor.cursor.line);
+                    let cbuf = editor.remove_line(editor.cursor.line);
                     // Change line number.
                     editor.cursor.line -= 1;
 
                     // The cursor should now be at the end of the previous line
                     // before appending the contents of the current line.
                     editor.cursor.index = editor.current_line().len();
-                    editor.current_line_mut().push_str(&cbuf);
+                    editor.push_curr_line(&cbuf);
                 }
             }
             KeyCode::Delete => {
-                if editor.buffers.is_empty() {
+                if editor.line_count() == 0 {
                     return Ok(true);
                 }
                 editor.cursor.index = editor.clamp_cursor_index();
 
                 if editor.cursor.index < editor.current_line().len() {
                     editor.cursor.index = editor.delete_char_after_cursor();
-                } else if editor.cursor.line + 1 < editor.buffers.len() {
+                } else if editor.cursor.line + 1 < editor.line_count() {
                     // Push the content of the next line to the this line.
-                    let cbuf = editor.buffers.remove(editor.cursor.line + 1);
-                    editor.current_line_mut().push_str(&cbuf);
+                    let cbuf = editor.remove_line(editor.cursor.line + 1);
+                    editor.push_curr_line(&cbuf);
                 }
             }
             KeyCode::Tab => {
@@ -129,28 +129,28 @@ impl NormalKeybinding {
                 // Quick escape and finish the input.
 
                 // Move to the end if cursor is not on last line.
-                if editor.cursor.line + 1 != editor.buffers.len() || editor.current_line().len() != 0 {
-                    editor.cursor.line = if editor.buffers.len() == 0 {
+                if editor.cursor.line + 1 != editor.line_count() || editor.current_line().len() != 0 {
+                    editor.cursor.line = if editor.line_count() == 0 {
                         0
                     } else {
-                        editor.buffers.len()
+                        editor.line_count()
                     };
                 }
                 
-                editor.buffers.push(String::new());
+                editor.push_line(String::new());
                 return Ok(false);
             }
             KeyCode::Enter => {
-                if editor.buffers.len() == 0 {
+                if editor.line_count() == 0 {
                     return Ok(false);
-                } else if editor.cursor.line + 1 == editor.buffers.len()
+                } else if editor.cursor.line + 1 == editor.line_count()
                     && editor.current_line().len() == 0
                 {
                     // Enter on the last line of the prompt which is also empty
                     // finishes the input.
 
-                    // Remove last useless line.
-                    editor.buffers.remove(editor.cursor.line);
+                    // // Remove last useless line. (this errors)
+                    // editor.buffers.remove(editor.cursor.line);
                     return Ok(false);
                 } else {
                     editor.cursor.index = editor.clamp_cursor_index();
@@ -160,7 +160,7 @@ impl NormalKeybinding {
                     let nbuf = cbuf.split_off(cursor_idx);
 
                     // Create a new line and move the cursor to the next line.
-                    editor.buffers.insert(editor.cursor.line + 1, nbuf);
+                    editor.insert_line(editor.cursor.line + 1, nbuf);
                     editor.cursor.index = 0;
                     editor.cursor.line += 1;
                 }

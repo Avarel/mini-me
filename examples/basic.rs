@@ -1,4 +1,4 @@
-use in_edit::Editor;
+use in_edit::editor::Editor;
 use in_edit::crossterm::Result;
 
 // Basic bare bones example.

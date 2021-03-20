@@ -1,4 +1,4 @@
-use in_edit::{Editor, renderer::full::FullRenderer};
+use in_edit::{editor::Editor, renderer::full::FullRenderer};
 use in_edit::crossterm::{Result, style::{self, style, Colorize}};
 
 // Example where there is a chevron in the gutter that follows the where the cursor.

@@ -1,4 +1,4 @@
-use crate::Cursor;
+use crate::editor::Cursor;
 use crossterm::Result;
 
 pub mod full;

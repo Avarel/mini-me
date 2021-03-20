@@ -1,13 +1,13 @@
-use crate::{Cursor, RenderData};
+use crate::editor::Cursor;
+use super::RenderData;
 
 use std::convert::TryInto;
 use std::io::{stdout, Write};
 
 use crossterm::{
     cursor::*,
-    QueueableCommand,
     terminal::{Clear, ClearType},
-    Result,
+    QueueableCommand, Result,
 };
 
 use super::Renderer;
@@ -230,12 +230,7 @@ impl<'w> FullRenderer<'w> {
     /// Move the curser to the terminal left margin.
     #[doc(hidden)]
     fn cursor_to_lmargin(&mut self) -> Result<()> {
-        if let Ok((_, r)) = crossterm::cursor::position() {
-            self.write.queue(MoveTo(0, r))?;
-        } else {
-            // Fallback
-            self.write.queue(MoveLeft(std::u16::MAX))?;
-        }
+        self.write.queue(MoveToColumn(0))?;
         Ok(())
     }
 
@@ -243,7 +238,8 @@ impl<'w> FullRenderer<'w> {
     #[inline]
     pub fn move_cursor_up(&mut self, n: usize) -> Result<()> {
         if n != 0 {
-            self.write.queue(MoveUp(n.try_into().unwrap_or(std::u16::MAX)))?;
+            self.write
+                .queue(MoveUp(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.draw_state.cursor.line -= n;
         }
         Ok(())
@@ -253,7 +249,8 @@ impl<'w> FullRenderer<'w> {
     #[inline]
     pub fn move_cursor_down(&mut self, n: usize) -> Result<()> {
         if n != 0 {
-            self.write.queue(MoveDown(n.try_into().unwrap_or(std::u16::MAX)))?;
+            self.write
+                .queue(MoveDown(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.draw_state.cursor.line += n;
         }
         Ok(())
@@ -263,7 +260,8 @@ impl<'w> FullRenderer<'w> {
     #[inline]
     pub fn move_cursor_left(&mut self, n: usize) -> Result<()> {
         if n != 0 {
-            self.write.queue(MoveLeft(n.try_into().unwrap_or(std::u16::MAX)))?;
+            self.write
+                .queue(MoveLeft(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.draw_state.cursor.index -= n;
         }
         Ok(())
@@ -273,7 +271,8 @@ impl<'w> FullRenderer<'w> {
     #[inline]
     pub fn move_cursor_right(&mut self, n: usize) -> Result<()> {
         if n != 0 {
-            self.write.queue(MoveRight(n.try_into().unwrap_or(std::u16::MAX)))?;
+            self.write
+                .queue(MoveRight(n.try_into().unwrap_or(std::u16::MAX)))?;
             self.draw_state.cursor.index += n;
         }
         Ok(())

@@ -14,5 +14,5 @@ name = "in_edit"
 edition = "2018"
 
 [dependencies]
-crossterm = "0.14"
+crossterm = "0.19"
 # console = { git = "https://github.com/Avarel/console" }
