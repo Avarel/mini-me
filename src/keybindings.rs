@@ -154,13 +154,11 @@ impl NormalKeybinding {
                     return Ok(false);
                 } else {
                     editor.cursor.index = editor.clamp_cursor_index();
+
                     // Split the input after the cursor.
                     let cursor_idx = editor.cursor.index;
-                    let cbuf = editor.current_line_mut();
-                    let nbuf = cbuf.split_off(cursor_idx);
+                    editor.split_line(editor.cursor.line, cursor_idx);
 
-                    // Create a new line and move the cursor to the next line.
-                    editor.insert_line(editor.cursor.line + 1, nbuf);
                     editor.cursor.index = 0;
                     editor.cursor.line += 1;
                 }

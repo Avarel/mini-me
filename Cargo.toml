@@ -15,4 +15,5 @@ edition = "2018"
 
 [dependencies]
 crossterm = "0.19"
+ropey = "1.2"
 # console = { git = "https://github.com/Avarel/console" }

@@ -30,12 +30,6 @@ impl<'w> Editor<'w> {
         MultilineTermBuilder::default()
     }
 
-    /// Return a mutable reference to the buffer of the terminal.
-    #[inline]
-    pub fn buffers_mut(&mut self) -> &mut Vec<String> {
-        &mut self.buffers
-    }
-
     pub fn line_count(&self) -> usize {
         self.buffers.len()
     }
@@ -54,7 +48,7 @@ impl<'w> Editor<'w> {
     ///
     /// ### Warning
     /// This function will allocate a new `String` to the buffer if it is empty.
-    pub fn current_line_mut(&mut self) -> &mut String {
+    fn current_line_mut(&mut self) -> &mut String {
         if self.buffers.is_empty() {
             let s = String::new();
             self.buffers.push(s);
@@ -83,7 +77,7 @@ impl<'w> Editor<'w> {
             .draw(Self::render_data(&self.buffers, &self.cursor))?;
         self.renderer.flush()?;
 
-        enable_raw_mode().unwrap();
+        enable_raw_mode()?;
         loop {
             let take_more = NormalKeybinding.read(&mut self)?;
 
@@ -102,7 +96,7 @@ impl<'w> Editor<'w> {
         self.renderer.clear_line()?;
         self.renderer.flush()?;
 
-        disable_raw_mode().unwrap();
+        disable_raw_mode()?;
 
         // If empty buffer, then return empty string.
         if self.buffers.is_empty() {
@@ -159,6 +153,14 @@ impl<'w> Editor<'w> {
 
     pub fn push_curr_line(&mut self, string: &str) {
         self.current_line_mut().push_str(string)
+    }
+
+    pub fn split_line(&mut self, line_idx: usize, cursor_idx: usize) {
+        let cbuf = self.current_line_mut();
+        let nbuf = cbuf.split_off(cursor_idx);
+
+        // Create a new line and move the cursor to the next line.
+        self.insert_line(line_idx + 1, nbuf);
     }
 }
 
