@@ -1,7 +1,8 @@
 use std::borrow::Cow;
 
-use ropey::Rope;
 use crate::{editor::Cursor, ext::RopeExt};
+
+use ropey::Rope;
 
 #[derive(Clone, Copy)]
 pub struct RenderData<'b> {

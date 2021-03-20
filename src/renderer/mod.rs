@@ -1,9 +1,9 @@
-use crossterm::Result;
+pub mod data;
+pub mod full;
 
 use self::data::RenderData;
 
-pub mod data;
-pub mod full;
+use crossterm::Result;
 
 pub trait Renderer {
     fn draw(&mut self, data: RenderData) -> Result<()>;

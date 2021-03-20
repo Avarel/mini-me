@@ -1,8 +1,8 @@
-use crate::editor::Cursor;
-use super::RenderData;
-
 use std::convert::TryInto;
 use std::io::{stdout, Write};
+
+use super::RenderData;
+use crate::editor::Cursor;
 
 use crossterm::{
     cursor::*,
@@ -14,7 +14,7 @@ use super::Renderer;
 
 pub struct FullRenderer<'b> {
     write: &'b mut dyn Write,
-    pub(super) draw_state: DrawState,
+    draw_state: DrawState,
     /// Formatter.
     formatter: Option<&'b dyn Fn(usize, &RenderData) -> String>,
 }

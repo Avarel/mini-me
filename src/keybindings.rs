@@ -2,7 +2,6 @@ use crate::editor::Editor;
 
 use crossterm::{
     event::{read, Event, KeyCode, KeyEvent, KeyModifiers},
-    // terminal::{disable_raw_mode, enable_raw_mode},
     Result,
 };
 
@@ -13,18 +12,20 @@ pub trait Keybinding {
 pub struct NormalKeybinding;
 
 impl Keybinding for NormalKeybinding {
-    fn read(&self, editor: &mut Editor) -> Result<bool> { 
+    fn read(&self, editor: &mut Editor) -> Result<bool> {
         let key_event = read()?;
         match key_event {
-            Event::Key(k) => {
-                Self::process_key_event(editor, k)
-            }
-            _ => Ok(true)
+            Event::Key(k) => Self::process_key_event(editor, k),
+            _ => Ok(true),
         }
     }
 }
 
 impl NormalKeybinding {
+    fn clamp_cursor_index(editor: &Editor) -> usize {
+        editor.cursor.index.min(editor.current_line_len())
+    }
+
     fn process_key_event(editor: &mut Editor, event: KeyEvent) -> Result<bool> {
         let code = event.code;
         match code {
@@ -54,7 +55,7 @@ impl NormalKeybinding {
                 if editor.line_count() == 0 {
                     return Ok(true);
                 }
-                editor.cursor.index = editor.clamp_cursor_index();
+                editor.cursor.index = Self::clamp_cursor_index(editor);
                 if editor.cursor.index > 0 {
                     editor.cursor.index -= 1;
                 } else if editor.cursor.line > 0 {
@@ -67,7 +68,7 @@ impl NormalKeybinding {
                 if editor.line_count() == 0 {
                     return Ok(true);
                 }
-                editor.cursor.index = editor.clamp_cursor_index();
+                editor.cursor.index = Self::clamp_cursor_index(editor);
                 let len = editor.current_line_len();
                 if editor.cursor.index < len {
                     editor.cursor.index += 1;
@@ -81,7 +82,7 @@ impl NormalKeybinding {
                 if editor.line_count() == 0 {
                     return Ok(true);
                 }
-                editor.cursor.index = editor.clamp_cursor_index();
+                editor.cursor.index = Self::clamp_cursor_index(editor);
 
                 if editor.cursor.index > 0 {
                     editor.cursor.index = editor.delete_char_at_cursor(-1);
@@ -97,33 +98,33 @@ impl NormalKeybinding {
                     // The cursor should now be at the end of the previous line
                     // before appending the contents of the current line.
                     editor.cursor.index = editor.current_line_len();
-                    editor.push_curr_line(&cbuf);
+                    editor.push_to_curr_line(&cbuf);
                 }
             }
             KeyCode::Delete => {
                 if editor.line_count() == 0 {
                     return Ok(true);
                 }
-                editor.cursor.index = editor.clamp_cursor_index();
+                editor.cursor.index = Self::clamp_cursor_index(editor);
 
                 if editor.cursor.index < editor.current_line_len() {
                     editor.cursor.index = editor.delete_char_at_cursor(0);
                 } else if editor.cursor.line + 1 < editor.line_count() {
                     // Push the content of the next line to the this line.
                     let cbuf = editor.remove_line(editor.cursor.line + 1);
-                    editor.push_curr_line(&cbuf);
+                    editor.push_to_curr_line(&cbuf);
                 }
             }
             KeyCode::Tab => {
-                editor.cursor.index = editor.clamp_cursor_index();
+                editor.cursor.index = Self::clamp_cursor_index(editor);
                 let soft = 4 - editor.current_line_len() % 4;
                 for _ in 0..soft {
-                    editor.cursor.index = editor.insert_char_at_cursor(' ');
+                    editor.cursor.index = editor.insert_char_at_cursor(0, ' ');
                 }
             }
             KeyCode::Char(c) => {
-                editor.cursor.index = editor.clamp_cursor_index();
-                editor.cursor.index = editor.insert_char_at_cursor(c);
+                editor.cursor.index = Self::clamp_cursor_index(editor);
+                editor.cursor.index = editor.insert_char_at_cursor(0, c);
             }
             KeyCode::Esc => {
                 // Quick escape and finish the input.
@@ -137,7 +138,7 @@ impl NormalKeybinding {
                     };
                     editor.push_line("");
                 }
-                
+
                 return Ok(false);
             }
             KeyCode::Enter => {
@@ -150,7 +151,7 @@ impl NormalKeybinding {
                     // finishes the input.
                     return Ok(false);
                 } else {
-                    editor.cursor.index = editor.clamp_cursor_index();
+                    editor.cursor.index = Self::clamp_cursor_index(editor);
 
                     // Split the input after the cursor.
                     let cursor_idx = editor.cursor.index;

@@ -1,7 +1,6 @@
-pub mod renderer;
-pub mod keybindings;
 pub mod editor;
+pub mod keybindings;
+pub mod renderer;
+pub use crossterm;
 
 mod ext;
-
-pub use crossterm;

@@ -1,11 +1,10 @@
 use crate::{
     ext::RopeExt,
     keybindings::{Keybinding, NormalKeybinding},
-    renderer::{full::FullRenderer, data::RenderData, Renderer},
+    renderer::{data::RenderData, full::FullRenderer, Renderer},
 };
 
 use ropey::Rope;
-
 use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode},
     Result,
@@ -72,16 +71,8 @@ impl<'w> Editor<'w> {
         Ok(buf)
     }
 
-    pub fn clamp_cursor_index(&self) -> usize {
-        self.cursor.index.min(self.current_line_len())
-    }
-
     fn add_offset(z: usize, offset: isize) -> usize {
-        if offset > 0 {
-            z + offset as usize
-        } else {
-            z - -offset as usize
-        }
+        z + offset as usize
     }
 
     fn cursor_rope_idx(&self, offset: isize) -> usize {
@@ -92,13 +83,14 @@ impl<'w> Editor<'w> {
     }
 
     pub fn delete_char_at_cursor(&mut self, offset: isize) -> usize {
+        let idx = self.cursor.index;
         let z = self.cursor_rope_idx(offset);
         self.buf.remove(z..z + 1);
-        Self::add_offset(self.cursor.index, offset)
+        Self::add_offset(idx, offset)
     }
 
-    pub fn insert_char_at_cursor(&mut self, c: char) -> usize {
-        let z = self.cursor_rope_idx(0);
+    pub fn insert_char_at_cursor(&mut self, offset: isize, c: char) -> usize {
+        let z = self.cursor_rope_idx(offset);
         self.buf.insert_char(z, c);
         self.cursor.index + 1
     }
@@ -111,7 +103,7 @@ impl<'w> Editor<'w> {
         self.buf.remove_line(line_idx)
     }
 
-    pub fn push_curr_line(&mut self, string: &str) {
+    pub fn push_to_curr_line(&mut self, string: &str) {
         let line_end = self.buf.line_to_char(self.cursor.line + 1) - 1;
         self.buf.insert(line_end, &string)
     }
