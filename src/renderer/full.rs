@@ -36,7 +36,7 @@ impl Renderer for FullRenderer<'_> {
     /// Draw the prompt.
     fn draw(&mut self, data: RenderData) -> Result<()> {
         // Handle empty buffer.
-        if data.buffers.is_empty() {
+        if data.line_count() == 0 {
             if let Some(f) = &self.formatter {
                 let string = &f(0, &data);
                 self.write_str(string)?;
@@ -61,7 +61,7 @@ impl Renderer for FullRenderer<'_> {
         self.draw_state.buffer_start = low;
         self.draw_state.height = high - low;
         self.draw_state.cursor.line = high - low - 1;
-        self.draw_state.cursor.index = data.buffers[high - 1].len();
+        self.draw_state.cursor.index = data.line(high - 1).len();
 
         self.draw_cursor(&data)?;
         self.flush()
@@ -136,25 +136,20 @@ impl<'w> FullRenderer<'w> {
         Ok(())
     }
 
-    // fn write_line(&mut self, s: &str) -> Result<()> {
-    //     write!(self.write, "{}\n", s)?;`
-    //     Ok(())
-    // }
-
     fn calculate_draw_range(&self, data: &RenderData) -> (usize, usize) {
         if let Ok((_, rows)) = crossterm::terminal::size() {
             // Rows of the terminal.
             let term_rows: usize = rows.try_into().unwrap();
             // let draw_rows = draw_rows - 1; Useful? Always leave 1 line on the top.
             // Rows of the data to draw.
-            let data_rows = data.buffers.len();
+            let data_rows = data.line_count();
             // Current line of the data.
-            let line = data.cursor.line;
+            let line = data.cursor().line;
             if data_rows > term_rows {
                 return if line + term_rows / 2 >= data_rows {
                     // Anchor to the bottom.
                     // low = data_rows - term_rows;
-                    (data_rows - term_rows, data.buffers.len())
+                    (data_rows - term_rows, data.line_count())
                 } else if term_rows / 2 > line {
                     // Anchor to the top.
                     (0, term_rows)
@@ -164,13 +159,13 @@ impl<'w> FullRenderer<'w> {
                 };
             }
         }
-        (0, data.buffers.len())
+        (0, data.line_count())
     }
 
     // Position the cursor.
     pub fn draw_cursor(&mut self, data: &RenderData) -> Result<()> {
-        self.move_cursor_to_line(data.cursor.line)?;
-        self.move_cursor_to_index(data.cursor.index.min(data.current_line().len()))
+        self.move_cursor_to_line(data.cursor().line)?;
+        self.move_cursor_to_index(data.cursor().index.min(data.current_line().len()))
     }
 
     /// Draw the line given an index.
@@ -182,7 +177,7 @@ impl<'w> FullRenderer<'w> {
             let string = &f(line, data);
             self.write_str(string)?;
         } else {
-            self.write_str(data.line(line))?;
+            self.write_str(&data.line(line))?;
         }
 
         // self.write_str(&term.buffers[line])?;
@@ -223,7 +218,7 @@ impl<'w> FullRenderer<'w> {
     /// Move the cursor to the beginning of the line.
     #[inline]
     pub fn move_cursor_to_start(&mut self, data: &RenderData) -> Result<()> {
-        self.move_cursor_left(data.cursor.index)?;
+        self.move_cursor_left(data.cursor().index)?;
         Ok(())
     }
 

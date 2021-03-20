@@ -1,6 +1,8 @@
-use crate::editor::Cursor;
 use crossterm::Result;
 
+use self::data::RenderData;
+
+pub mod data;
 pub mod full;
 
 pub trait Renderer {
@@ -9,23 +11,4 @@ pub trait Renderer {
     fn clear_draw(&mut self) -> Result<()>;
     fn clear_line(&mut self) -> Result<()>;
     fn flush(&mut self) -> Result<()>;
-}
-
-#[derive(Clone, Copy)]
-pub struct RenderData<'b> {
-    pub buffers: &'b Vec<String>,
-    pub cursor: &'b Cursor,
-}
-
-impl RenderData<'_> {
-    pub fn current_line(&self) -> &str {
-        if self.buffers.len() == 0 {
-            return "";
-        }
-        &self.buffers[self.cursor.line]
-    }
-
-    pub fn line(&self, index: usize) -> &str {
-        &self.buffers[index]
-    }
 }

@@ -1,7 +1,10 @@
 use crate::{
+    ext::RopeExt,
     keybindings::{Keybinding, NormalKeybinding},
-    renderer::{full::FullRenderer, RenderData, Renderer},
+    renderer::{full::FullRenderer, data::RenderData, Renderer},
 };
+
+use ropey::Rope;
 
 use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode},
@@ -10,7 +13,7 @@ use crossterm::{
 
 /// Multiline abstraction around a terminal.
 pub struct Editor<'w> {
-    buffers: Vec<String>,
+    buf: Rope,
     pub cursor: Cursor,
     renderer: Box<dyn 'w + Renderer>,
 }
@@ -31,50 +34,16 @@ impl<'w> Editor<'w> {
     }
 
     pub fn line_count(&self) -> usize {
-        self.buffers.len()
+        self.buf.len_lines()
     }
 
-    /// Get a reference to current line of the cursor on the buffer.
-    /// Unlike `current_line_mut`, this function will not allocate a new string
-    /// if the buffer is empty, instead returning an empty string.
-    pub fn current_line(&self) -> &str {
-        if self.buffers.len() == 0 {
-            return "";
-        }
-        &self.buffers[self.cursor.line]
+    pub fn current_line_len(&self) -> usize {
+        self.buf.line_trimmed(self.cursor.line).len_chars()
     }
 
-    /// Get a mutable reference to the current line of the cursor on the buffer.
-    ///
-    /// ### Warning
-    /// This function will allocate a new `String` to the buffer if it is empty.
-    fn current_line_mut(&mut self) -> &mut String {
-        if self.buffers.is_empty() {
-            let s = String::new();
-            self.buffers.push(s);
-            return &mut self.buffers[0];
-        }
-        &mut self.buffers[self.cursor.line]
-    }
-
-    #[doc(hidden)]
-    #[inline]
-    fn render_data<'b>(buffers: &'b Vec<String>, cursor: &'b Cursor) -> RenderData<'b> {
-        RenderData { buffers, cursor }
-    }
-
-    /// Read multiple lines of input.
-    ///
-    /// ### Features
-    /// * `Enter` on an empty last line will submit the input.
-    /// * `Enter` on a non-empty line will create a new line.
-    /// * `Backspace` at the beginning of the line to tappend the content
-    ///   of the current line to the previous line.
-    ///
-    /// The returned result does not include the final empty line or trailing newline.
     pub fn read_multiline(mut self) -> Result<String> {
         self.renderer
-            .draw(Self::render_data(&self.buffers, &self.cursor))?;
+            .draw(RenderData::new(&self.buf, &self.cursor))?;
         self.renderer.flush()?;
 
         enable_raw_mode()?;
@@ -82,7 +51,7 @@ impl<'w> Editor<'w> {
             let take_more = NormalKeybinding.read(&mut self)?;
 
             self.renderer
-                .redraw(Self::render_data(&self.buffers, &self.cursor))?;
+                .redraw(RenderData::new(&self.buf, &self.cursor))?;
             self.renderer.flush()?;
 
             if take_more {
@@ -98,69 +67,59 @@ impl<'w> Editor<'w> {
 
         disable_raw_mode()?;
 
-        // If empty buffer, then return empty string.
-        if self.buffers.is_empty() {
-            return Ok(String::new());
-        }
-
-        // Join the buffers together, putting a `\n` in between each line.
-        // Ensure the capacity to avoid reallocations.
-        let mut buf =
-            String::with_capacity(self.buffers.iter().map(|x| x.len() + 1).sum::<usize>() - 1);
-        buf.push_str(&self.buffers[0]);
-        for s in &self.buffers[1..] {
-            buf.push('\n');
-            buf.push_str(&s);
-        }
+        let buf = self.buf.to_string();
 
         Ok(buf)
     }
 
-    pub fn delete_char_before_cursor(&mut self) -> usize {
-        let idx = self.cursor.index;
-        self.current_line_mut().remove(idx - 1);
-        idx - 1
-    }
-
-    pub fn delete_char_after_cursor(&mut self) -> usize {
-        let idx = self.cursor.index;
-        self.current_line_mut().remove(idx);
-        idx
-    }
-
-    pub fn insert_char_before_cursor(&mut self, c: char) -> usize {
-        let idx = self.cursor.index;
-        self.current_line_mut().insert(idx, c);
-        idx + 1
-    }
-
-    // Returns an index that ensure that the cursor index is not overflowing the end.
     pub fn clamp_cursor_index(&self) -> usize {
-        self.cursor.index.min(self.current_line().len())
+        self.cursor.index.min(self.current_line_len())
+    }
+
+    fn add_offset(z: usize, offset: isize) -> usize {
+        if offset > 0 {
+            z + offset as usize
+        } else {
+            z - -offset as usize
+        }
+    }
+
+    fn cursor_rope_idx(&self, offset: isize) -> usize {
+        let idx = self.cursor.index;
+        let line_start = self.buf.line_to_char(self.cursor.line);
+        let z = line_start + idx;
+        Self::add_offset(z, offset)
+    }
+
+    pub fn delete_char_at_cursor(&mut self, offset: isize) -> usize {
+        let z = self.cursor_rope_idx(offset);
+        self.buf.remove(z..z + 1);
+        Self::add_offset(self.cursor.index, offset)
+    }
+
+    pub fn insert_char_at_cursor(&mut self, c: char) -> usize {
+        let z = self.cursor_rope_idx(0);
+        self.buf.insert_char(z, c);
+        self.cursor.index + 1
+    }
+
+    pub fn push_line(&mut self, string: &str) {
+        self.buf.insert_line(self.line_count(), string)
     }
 
     pub fn remove_line(&mut self, line_idx: usize) -> String {
-        self.buffers.remove(line_idx)
-    }
-
-    pub fn push_line(&mut self, string: String) {
-        self.buffers.push(string)
-    }
-
-    pub fn insert_line(&mut self, line_idx: usize, string: String) {
-        self.buffers.insert(line_idx, string)
+        self.buf.remove_line(line_idx)
     }
 
     pub fn push_curr_line(&mut self, string: &str) {
-        self.current_line_mut().push_str(string)
+        let line_end = self.buf.line_to_char(self.cursor.line + 1) - 1;
+        self.buf.insert(line_end, &string)
     }
 
     pub fn split_line(&mut self, line_idx: usize, cursor_idx: usize) {
-        let cbuf = self.current_line_mut();
-        let nbuf = cbuf.split_off(cursor_idx);
-
-        // Create a new line and move the cursor to the next line.
-        self.insert_line(line_idx + 1, nbuf);
+        let line_start = self.buf.line_to_char(line_idx);
+        let z = line_start + cursor_idx;
+        self.buf.insert_char(z, '\n');
     }
 }
 
@@ -168,7 +127,7 @@ impl<'w> Editor<'w> {
 #[derive(Default)]
 pub struct MultilineTermBuilder<'w> {
     /// Initial buffer for the multiline terminal.
-    buffers: Vec<String>,
+    init: String,
     /// Initial line that the cursor is supposed to be set at.
     line: usize,
     /// Initial index that the cursor is supposed to be set at.
@@ -180,8 +139,8 @@ pub struct MultilineTermBuilder<'w> {
 impl<'w> MultilineTermBuilder<'w> {
     /// Set the buffer that the terminal will be initialized with.
     #[inline]
-    pub fn initial_buffers(mut self, buffers: Vec<String>) -> Self {
-        self.buffers = buffers;
+    pub fn initial_buffers(mut self, init: String) -> Self {
+        self.init = init;
         self
     }
 
@@ -206,7 +165,7 @@ impl<'w> MultilineTermBuilder<'w> {
 
     pub fn build(self) -> Editor<'w> {
         Editor {
-            buffers: self.buffers,
+            buf: Rope::from(self.init),
             cursor: Cursor {
                 line: self.line,
                 index: self.index,
