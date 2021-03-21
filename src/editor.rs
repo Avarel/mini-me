@@ -12,8 +12,8 @@ use crossterm::{
 
 /// Multiline abstraction around a terminal.
 pub struct Editor<'w> {
-    buf: Rope,
     pub cursor: Cursor,
+    buf: Rope,
     renderer: Box<dyn 'w + Renderer>,
 }
 
@@ -46,6 +46,7 @@ impl<'w> Editor<'w> {
         self.renderer.flush()?;
 
         enable_raw_mode()?;
+
         loop {
             let take_more = NormalKeybinding.read(&mut self)?;
 
@@ -71,40 +72,35 @@ impl<'w> Editor<'w> {
         Ok(buf)
     }
 
-    fn add_offset(z: usize, offset: isize) -> usize {
-        z + offset as usize
-    }
-
     fn cursor_rope_idx(&self, offset: isize) -> usize {
         let idx = self.cursor.index;
         let line_start = self.buf.line_to_char(self.cursor.line);
         let z = line_start + idx;
-        Self::add_offset(z, offset)
+        z + offset as usize
     }
 
     pub fn delete_char_at_cursor(&mut self, offset: isize) -> usize {
-        let idx = self.cursor.index;
         let z = self.cursor_rope_idx(offset);
         self.buf.remove(z..z + 1);
-        Self::add_offset(idx, offset)
+        self.cursor.index + offset as usize
     }
 
     pub fn insert_char_at_cursor(&mut self, offset: isize, c: char) -> usize {
         let z = self.cursor_rope_idx(offset);
         self.buf.insert_char(z, c);
-        self.cursor.index + 1
+        self.cursor.index + offset as usize + 1
     }
 
-    pub fn push_line(&mut self, string: &str) {
-        self.buf.insert_line(self.line_count(), string)
+    pub fn insert_line(&mut self, line_idx: usize, string: &str) {
+        self.buf.insert_line(line_idx, string)
     }
 
     pub fn remove_line(&mut self, line_idx: usize) -> String {
         self.buf.remove_line(line_idx)
     }
 
-    pub fn push_to_curr_line(&mut self, string: &str) {
-        let line_end = self.buf.line_to_char(self.cursor.line + 1) - 1;
+    pub fn push_line_str(&mut self, line_idx: usize, string: &str) {
+        let line_end = self.buf.line_to_char(line_idx + 1) - 1;
         self.buf.insert(line_end, &string)
     }
 

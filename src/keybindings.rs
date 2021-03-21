@@ -22,8 +22,8 @@ impl Keybinding for NormalKeybinding {
 }
 
 impl NormalKeybinding {
-    fn clamp_cursor_index(editor: &Editor) -> usize {
-        editor.cursor.index.min(editor.current_line_len())
+    fn clamp_cursor_index(editor: &mut Editor) {
+        editor.cursor.index = editor.cursor.index.min(editor.current_line_len());
     }
 
     fn process_key_event(editor: &mut Editor, event: KeyEvent) -> Result<bool> {
@@ -31,13 +31,7 @@ impl NormalKeybinding {
         match code {
             KeyCode::Down => {
                 if event.modifiers.contains(KeyModifiers::SHIFT) {
-                    editor.cursor.line = if editor.line_count() == 0 {
-                        0
-                    } else {
-                        editor.line_count() - 1
-                    };
-                } else if editor.line_count() == 0 {
-                    return Ok(true);
+                    editor.cursor.line = editor.line_count() - 1;
                 } else if editor.cursor.line + 1 < editor.line_count() {
                     editor.cursor.line += 1;
                 }
@@ -45,17 +39,12 @@ impl NormalKeybinding {
             KeyCode::Up => {
                 if event.modifiers.contains(KeyModifiers::SHIFT) {
                     editor.cursor.line = 0;
-                } else if editor.line_count() == 0 {
-                    return Ok(true);
                 } else if editor.cursor.line > 0 {
                     editor.cursor.line -= 1;
                 }
             }
             KeyCode::Left => {
-                if editor.line_count() == 0 {
-                    return Ok(true);
-                }
-                editor.cursor.index = Self::clamp_cursor_index(editor);
+                Self::clamp_cursor_index(editor);
                 if editor.cursor.index > 0 {
                     editor.cursor.index -= 1;
                 } else if editor.cursor.line > 0 {
@@ -65,10 +54,7 @@ impl NormalKeybinding {
                 }
             }
             KeyCode::Right => {
-                if editor.line_count() == 0 {
-                    return Ok(true);
-                }
-                editor.cursor.index = Self::clamp_cursor_index(editor);
+                Self::clamp_cursor_index(editor);
                 let len = editor.current_line_len();
                 if editor.cursor.index < len {
                     editor.cursor.index += 1;
@@ -79,11 +65,7 @@ impl NormalKeybinding {
                 }
             }
             KeyCode::Backspace => {
-                if editor.line_count() == 0 {
-                    return Ok(true);
-                }
-                editor.cursor.index = Self::clamp_cursor_index(editor);
-
+                Self::clamp_cursor_index(editor);
                 if editor.cursor.index > 0 {
                     editor.cursor.index = editor.delete_char_at_cursor(-1);
                 } else if editor.cursor.line > 0 {
@@ -98,32 +80,28 @@ impl NormalKeybinding {
                     // The cursor should now be at the end of the previous line
                     // before appending the contents of the current line.
                     editor.cursor.index = editor.current_line_len();
-                    editor.push_to_curr_line(&cbuf);
+                    editor.push_line_str(editor.cursor.line, &cbuf);
                 }
             }
             KeyCode::Delete => {
-                if editor.line_count() == 0 {
-                    return Ok(true);
-                }
-                editor.cursor.index = Self::clamp_cursor_index(editor);
-
+                Self::clamp_cursor_index(editor);
                 if editor.cursor.index < editor.current_line_len() {
                     editor.cursor.index = editor.delete_char_at_cursor(0);
                 } else if editor.cursor.line + 1 < editor.line_count() {
                     // Push the content of the next line to the this line.
                     let cbuf = editor.remove_line(editor.cursor.line + 1);
-                    editor.push_to_curr_line(&cbuf);
+                    editor.push_line_str(editor.cursor.line, &cbuf);
                 }
             }
             KeyCode::Tab => {
-                editor.cursor.index = Self::clamp_cursor_index(editor);
-                let soft = 4 - editor.current_line_len() % 4;
+                Self::clamp_cursor_index(editor);
+                let soft = 4 - editor.cursor.index % 4;
                 for _ in 0..soft {
                     editor.cursor.index = editor.insert_char_at_cursor(0, ' ');
                 }
             }
             KeyCode::Char(c) => {
-                editor.cursor.index = Self::clamp_cursor_index(editor);
+                Self::clamp_cursor_index(editor);
                 editor.cursor.index = editor.insert_char_at_cursor(0, c);
             }
             KeyCode::Esc => {
@@ -131,35 +109,27 @@ impl NormalKeybinding {
 
                 // Move to the end if cursor is not on last line.
                 if editor.cursor.line + 1 != editor.line_count() || editor.current_line_len() != 0 {
-                    editor.cursor.line = if editor.line_count() == 0 {
-                        0
-                    } else {
-                        editor.line_count()
-                    };
-                    editor.push_line("");
+                    editor.cursor.line = editor.line_count();
+                    editor.insert_line(editor.line_count(), "");
                 }
 
                 return Ok(false);
             }
             KeyCode::Enter => {
-                if editor.line_count() == 0 {
-                    return Ok(false);
-                } else if editor.cursor.line + 1 == editor.line_count()
-                    && editor.current_line_len() == 0
-                {
+                if editor.cursor.line + 1 == editor.line_count() && editor.current_line_len() == 0 {
                     // Enter on the last line of the prompt which is also empty
                     // finishes the input.
                     return Ok(false);
-                } else {
-                    editor.cursor.index = Self::clamp_cursor_index(editor);
-
-                    // Split the input after the cursor.
-                    let cursor_idx = editor.cursor.index;
-                    editor.split_line(editor.cursor.line, cursor_idx);
-
-                    editor.cursor.index = 0;
-                    editor.cursor.line += 1;
                 }
+
+                Self::clamp_cursor_index(editor);
+
+                // Split the input after the cursor.
+                let cursor_idx = editor.cursor.index;
+                editor.split_line(editor.cursor.line, cursor_idx);
+
+                editor.cursor.index = 0;
+                editor.cursor.line += 1;
             }
             _ => { /* ignore */ }
         }

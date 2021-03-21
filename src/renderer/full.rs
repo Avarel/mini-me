@@ -1,5 +1,5 @@
 use std::convert::TryInto;
-use std::io::{stdout, Write};
+use std::io::{self, stdout, Write};
 
 use super::RenderData;
 use crate::editor::Cursor;
@@ -16,35 +16,25 @@ pub struct FullRenderer<'b> {
     write: &'b mut dyn Write,
     draw_state: DrawState,
     /// Formatter.
-    formatter: Option<&'b dyn Fn(usize, &RenderData) -> String>,
+    formatter: &'b dyn Fn(&RenderData, usize, &mut dyn Write) -> io::Result<()>,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 /// Contains information about the cursor and the height
 /// of the last frame drawn.
-pub(super) struct DrawState {
+struct DrawState {
     // Initial index of buffer.
-    pub buffer_start: usize,
+    buffer_start: usize,
     // How much of the buffer drawn.
-    pub height: usize,
+    height: usize,
     // Position of the cursor RELATIVE TO THE TERMINAL
     // to the start of the drawn frame.
-    pub cursor: Cursor,
+    cursor: Cursor,
 }
 
 impl Renderer for FullRenderer<'_> {
     /// Draw the prompt.
     fn draw(&mut self, data: RenderData) -> Result<()> {
-        // Handle empty buffer.
-        if data.line_count() == 0 {
-            if let Some(f) = &self.formatter {
-                let string = &f(0, &data);
-                self.write_str(string)?;
-            }
-            self.draw_state.height = 1;
-            return self.flush();
-        }
-
         let (low, high) = self.calculate_draw_range(&data);
 
         // Print out the contents.
@@ -52,7 +42,7 @@ impl Renderer for FullRenderer<'_> {
             self.draw_line(&data, i)?;
             if i < high - 1 {
                 // The last line should not have any new-line attached to it.
-                self.write_str("\n")?;
+                self.write.write(b"\n")?;
             }
         }
 
@@ -113,34 +103,31 @@ impl<'w> FullRenderer<'w> {
         }
     }
 
-    pub fn render_with_formatter<F: Fn(usize, &RenderData) -> String>(f: &'w F) -> Self {
+    pub fn render_with_formatter<F: Fn(&RenderData, usize, &mut dyn Write) -> io::Result<()>>(
+        formatter: &'w F,
+    ) -> Self {
         FullRenderer {
-            formatter: Some(f),
+            formatter,
             ..Default::default()
         }
     }
 
-    pub fn render_with_formatter_to<F: Fn(usize, &RenderData) -> String>(
+    pub fn render_with_formatter_to<F: Fn(&RenderData, usize, &mut dyn Write) -> io::Result<()>>(
         write: &'w mut dyn Write,
-        f: &'w F,
+        formatter: &'w F,
     ) -> Self {
         FullRenderer {
             write,
-            formatter: Some(f),
+            formatter,
             ..Default::default()
         }
-    }
-
-    fn write_str(&mut self, s: &str) -> Result<()> {
-        write!(self.write, "{}", s)?;
-        Ok(())
     }
 
     fn calculate_draw_range(&self, data: &RenderData) -> (usize, usize) {
         if let Ok((_, rows)) = crossterm::terminal::size() {
             // Rows of the terminal.
             let term_rows: usize = rows.try_into().unwrap();
-            // let draw_rows = draw_rows - 1; Useful? Always leave 1 line on the top.
+            // let term_rows = term_rows - 2;
             // Rows of the data to draw.
             let data_rows = data.line_count();
             // Current line of the data.
@@ -173,12 +160,7 @@ impl<'w> FullRenderer<'w> {
     pub fn draw_line(&mut self, data: &RenderData, line: usize) -> Result<()> {
         self.cursor_to_lmargin()?;
 
-        if let Some(f) = self.formatter {
-            let string = &f(line, data);
-            self.write_str(string)?;
-        } else {
-            self.write_str(&data.line(line))?;
-        }
+        (self.formatter)(data, line, self.write)?;
 
         // self.write_str(&term.buffers[line])?;
         self.write.queue(Clear(ClearType::UntilNewLine))?;
@@ -283,7 +265,7 @@ impl Default for FullRenderer<'_> {
         FullRenderer {
             write: Box::leak(out),
             draw_state: DrawState::default(),
-            formatter: None,
+            formatter: &|data, line, write| data.write_line(line, write),
         }
     }
 }

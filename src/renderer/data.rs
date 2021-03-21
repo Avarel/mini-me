@@ -1,4 +1,7 @@
-use std::borrow::Cow;
+use std::{
+    borrow::Cow,
+    io::{self, Write},
+};
 
 use crate::{editor::Cursor, ext::RopeExt};
 
@@ -21,6 +24,14 @@ impl<'b> RenderData<'b> {
 
     pub fn line_count(&self) -> usize {
         self.buf.len_lines()
+    }
+
+    pub fn write_line(&self, line_idx: usize, write: &mut dyn Write) -> io::Result<()> {
+        self.buf
+            .line_trimmed(line_idx)
+            .chunks()
+            .map(|c| c.as_bytes())
+            .try_for_each(|c| write.write_all(c))
     }
 
     pub fn line(&self, index: usize) -> Cow<str> {
