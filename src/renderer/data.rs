@@ -26,6 +26,10 @@ impl<'b> RenderData<'b> {
         self.buf.len_lines()
     }
 
+    pub fn char_count(&self) -> usize {
+        self.buf.len_chars()
+    }
+
     pub fn write_line(&self, line_idx: usize, write: &mut dyn Write) -> io::Result<()> {
         self.buf
             .line_trimmed(line_idx)
@@ -43,6 +47,6 @@ impl<'b> RenderData<'b> {
     }
 
     pub fn current_line(&self) -> Cow<str> {
-        self.line(self.cursor.line)
+        self.line(self.cursor.ln)
     }
 }

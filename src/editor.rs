@@ -1,35 +1,42 @@
+use std::io::Stdout;
+
 use crate::{
     ext::RopeExt,
-    keybindings::{Keybinding, NormalKeybinding},
-    renderer::{data::RenderData, full::FullRenderer, Renderer},
+    keybindings::Keybinding,
+    renderer::{data::RenderData, full::CrosstermRenderer, Renderer},
 };
 
+use crossterm::Result;
 use ropey::Rope;
-use crossterm::{
-    terminal::{disable_raw_mode, enable_raw_mode},
-    Result,
-};
 
 /// Multiline abstraction around a terminal.
-pub struct Editor<'w> {
+pub struct Editor<R> {
     pub cursor: Cursor,
     buf: Rope,
-    renderer: Box<dyn 'w + Renderer>,
+    renderer: R,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cursor {
     /// Current line of the cursor.
-    pub line: usize,
+    pub ln: usize,
     /// Current index of the cursor.
-    pub index: usize,
+    pub col: usize,
 }
 
-impl<'w> Editor<'w> {
-    /// Create a builder for `MultilineTerm`.
-    #[inline]
-    pub fn builder<'b>() -> MultilineTermBuilder<'b> {
-        MultilineTermBuilder::default()
+impl Editor<CrosstermRenderer<'_, Stdout>> {
+    pub fn new() -> Self {
+        Editor::with_renderer(CrosstermRenderer::default())
+    }
+}
+
+impl<R: Renderer> Editor<R> {
+    pub fn with_renderer(renderer: R) -> Self {
+        Editor {
+            buf: Rope::new(),
+            cursor: Cursor::default(),
+            renderer,
+        }
     }
 
     pub fn line_count(&self) -> usize {
@@ -37,44 +44,28 @@ impl<'w> Editor<'w> {
     }
 
     pub fn current_line_len(&self) -> usize {
-        self.buf.line_trimmed(self.cursor.line).len_chars()
+        self.buf.line_trimmed(self.cursor.ln).len_chars()
     }
 
-    pub fn read_multiline(mut self) -> Result<String> {
-        self.renderer
-            .draw(RenderData::new(&self.buf, &self.cursor))?;
-        self.renderer.flush()?;
-
-        enable_raw_mode()?;
-
+    pub fn read(mut self, keybinding: impl Keybinding) -> Result<String> {
         loop {
-            let take_more = NormalKeybinding.read(&mut self)?;
-
             self.renderer
                 .redraw(RenderData::new(&self.buf, &self.cursor))?;
             self.renderer.flush()?;
 
-            if take_more {
-                continue;
-            } else {
+            if !keybinding.read(&mut self)? {
                 break;
             }
         }
 
-        // Clear the last empty useless line.
-        self.renderer.clear_line()?;
-        self.renderer.flush()?;
+        self.renderer.finish()?;
 
-        disable_raw_mode()?;
-
-        let buf = self.buf.to_string();
-
-        Ok(buf)
+        Ok(self.buf.trimmed().to_string())
     }
 
     fn cursor_rope_idx(&self, offset: isize) -> usize {
-        let idx = self.cursor.index;
-        let line_start = self.buf.line_to_char(self.cursor.line);
+        let idx = self.cursor.col;
+        let line_start = self.buf.line_to_char(self.cursor.ln);
         let z = line_start + idx;
         z + offset as usize
     }
@@ -82,13 +73,13 @@ impl<'w> Editor<'w> {
     pub fn delete_char_at_cursor(&mut self, offset: isize) -> usize {
         let z = self.cursor_rope_idx(offset);
         self.buf.remove(z..z + 1);
-        self.cursor.index + offset as usize
+        self.cursor.col + offset as usize
     }
 
     pub fn insert_char_at_cursor(&mut self, offset: isize, c: char) -> usize {
         let z = self.cursor_rope_idx(offset);
         self.buf.insert_char(z, c);
-        self.cursor.index + offset as usize + 1
+        self.cursor.col + offset as usize + 1
     }
 
     pub fn insert_line(&mut self, line_idx: usize, string: &str) {
@@ -108,59 +99,5 @@ impl<'w> Editor<'w> {
         let line_start = self.buf.line_to_char(line_idx);
         let z = line_start + cursor_idx;
         self.buf.insert_char(z, '\n');
-    }
-}
-
-/// Builder struct for `MultilineTerm`.
-#[derive(Default)]
-pub struct MultilineTermBuilder<'w> {
-    /// Initial buffer for the multiline terminal.
-    init: String,
-    /// Initial line that the cursor is supposed to be set at.
-    line: usize,
-    /// Initial index that the cursor is supposed to be set at.
-    index: usize,
-    /// The renderer.
-    renderer: Option<Box<dyn 'w + Renderer>>,
-}
-
-impl<'w> MultilineTermBuilder<'w> {
-    /// Set the buffer that the terminal will be initialized with.
-    #[inline]
-    pub fn initial_buffers(mut self, init: String) -> Self {
-        self.init = init;
-        self
-    }
-
-    /// Set what line the cursor will initially start at.
-    #[inline]
-    pub fn line(mut self, line: usize) -> Self {
-        self.line = line;
-        self
-    }
-
-    /// Set what index the cursor will initially start at.
-    #[inline]
-    pub fn index(mut self, index: usize) -> Self {
-        self.index = index;
-        self
-    }
-
-    pub fn renderer(mut self, renderer: impl 'w + Renderer) -> Self {
-        self.renderer = Some(Box::new(renderer));
-        self
-    }
-
-    pub fn build(self) -> Editor<'w> {
-        Editor {
-            buf: Rope::from(self.init),
-            cursor: Cursor {
-                line: self.line,
-                index: self.index,
-            },
-            renderer: self
-                .renderer
-                .unwrap_or_else(|| Box::new(FullRenderer::default())),
-        }
     }
 }

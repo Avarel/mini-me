@@ -2,6 +2,7 @@ use ropey::{Rope, RopeSlice};
 
 pub trait RopeExt {
     fn line_trimmed(&self, line_idx: usize) -> RopeSlice<'_>;
+    fn trimmed(&self) -> RopeSlice<'_>;
     fn remove_line(&mut self, line_idx: usize) -> String;
     fn insert_line(&mut self, line_idx: usize, string: &str);
 }
@@ -16,6 +17,18 @@ impl RopeExt for Rope {
             line.slice(..line_len - 1)
         } else {
             line.slice(..line_len)
+        }
+    }
+
+    fn trimmed(&self) -> RopeSlice<'_> {
+        let rope = self.slice(..);
+        let rope_len = rope.len_chars();
+        if rope_len == 0 {
+            rope
+        } else if rope.char(rope_len - 1) == '\n' {
+            rope.slice(..rope_len - 1)
+        } else {
+            rope.slice(..rope_len)
         }
     }
 
