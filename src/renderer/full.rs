@@ -1,7 +1,7 @@
 use std::io::{self, stdout, Write};
 use std::{convert::TryInto, io::Stdout};
 
-use super::{RenderData, Renderer};
+use super::{margin::{Margin, NoGutter}, RenderData, Renderer};
 use crate::Cursor;
 
 use crossterm::{
@@ -10,12 +10,13 @@ use crossterm::{
     QueueableCommand, Result,
 };
 
-pub struct CrosstermRenderer<'b, W> {
+pub struct CrosstermRenderer<'b, W, M> {
     write: &'b mut W,
+    margin: M,
     draw_state: DrawState,
 }
 
-impl<W> Drop for CrosstermRenderer<'_, W> {
+impl<W, M> Drop for CrosstermRenderer<'_, W, M> {
     fn drop(&mut self) {
         disable_raw_mode().unwrap();
     }
@@ -25,16 +26,16 @@ impl<W> Drop for CrosstermRenderer<'_, W> {
 /// Contains information about the cursor and the height
 /// of the last frame drawn.
 struct DrawState {
-    // Initial index of buffer.
-    line_start: usize,
-    // How much of the buffer drawn.
     height: usize,
-    // Position of the cursor relative to the end of the margin
-    // to the start of the drawn frame.
+    // Anchor of the box
+    anchor: Cursor,
+    low: usize,
+    high: usize,
+    // Box cursor relative to the anchor
     cursor: Cursor,
 }
 
-impl<W: Write> Renderer for CrosstermRenderer<'_, W> {
+impl<W: Write, M: Margin<W>> Renderer for CrosstermRenderer<'_, W, M> {
     /// Draw the prompt.
     fn draw(&mut self, data: RenderData) -> Result<()> {
         let (low, high) = self.calculate_draw_range(&data);
@@ -52,10 +53,12 @@ impl<W: Write> Renderer for CrosstermRenderer<'_, W> {
             }
         }
 
-        self.draw_state.line_start += low;
+        self.draw_state.anchor.col = self.margin.width();
+        self.draw_state.low = low;
+        self.draw_state.high = high;
         self.draw_state.height += high - low;
-        self.draw_state.cursor.ln += high - low - 1;
-        self.draw_state.cursor.col += data.line(high - 1).len();
+        self.draw_state.cursor.ln = high - low - 1;
+        self.draw_state.cursor.col = data.line(high - 1).len();
 
         self.write.queue(Clear(ClearType::FromCursorDown))?;
 
@@ -76,8 +79,7 @@ impl<W: Write> Renderer for CrosstermRenderer<'_, W> {
 
     /// Clear the drawn prompt on the screen.
     fn clear_draw(&mut self) -> Result<()> {
-        self.move_cursor_up(self.draw_state.cursor.ln)?;
-        self.cursor_to_left_term_edge()?;
+        self.move_to_frame_base()?;
         self.write.queue(Clear(ClearType::FromCursorDown))?;
 
         self.draw_state = DrawState::default();
@@ -88,7 +90,7 @@ impl<W: Write> Renderer for CrosstermRenderer<'_, W> {
     /// Redraw the screen.
     fn redraw(&mut self, data: RenderData) -> Result<()> {
         // self.write.queue(Hide)?;
-        self.move_cursor_up(self.draw_state.cursor.ln)?;
+        self.move_to_frame_base()?;
         self.draw(data)?;
         // self.write.queue(Show)?;
         Ok(())
@@ -105,18 +107,23 @@ impl<W: Write> Renderer for CrosstermRenderer<'_, W> {
     }
 }
 
-// region: to factor out as customizations
 const RESERVED_ROWS: usize = 2;
-const GUTTER: usize = 5;
-const MARGIN: usize = 3;
-const MARGIN_STR: &[&str] = &[" │ ", " ┃ "];
-const TOTAL_MARGIN: usize = GUTTER + MARGIN;
 
-impl<'w, W: Write> CrosstermRenderer<'w, W> {
+impl<'w, W: Write> CrosstermRenderer<'w, W, NoGutter> {
+    pub fn render_to(write: &'w mut W) -> Self {
+        enable_raw_mode().unwrap();
+        CrosstermRenderer {
+            write,
+            draw_state: DrawState::default(),
+            margin: NoGutter,
+        }
+    }
+}
+
+impl<'w, W: Write, M: Margin<W>> CrosstermRenderer<'w, W, M> {
     fn draw_header(&mut self, mut f: impl FnMut(&mut W) -> io::Result<()>) -> Result<()> {
         self.draw_state.height += 1;
-        self.draw_state.line_start -= 1; // this line croaks in debug
-        self.draw_state.cursor.ln += 1;
+        self.draw_state.anchor.ln += 1;
 
         self.cursor_to_left_term_edge()?;
         f(self.write)?;
@@ -127,24 +134,14 @@ impl<'w, W: Write> CrosstermRenderer<'w, W> {
 
     fn draw_footer(&mut self, mut f: impl FnMut(&mut W) -> io::Result<()>) -> Result<()> {
         self.draw_state.height += 1;
-        self.draw_state.cursor.ln += 1;
-        self.draw_state.cursor.col = 0;
 
         self.write.write(b"\n")?;
         self.cursor_to_left_term_edge()?;
         f(self.write)?;
         self.write.queue(Clear(ClearType::UntilNewLine))?;
-        self.write
-            .queue(MoveToColumn((TOTAL_MARGIN + 1).try_into().unwrap()))?;
         Ok(())
     }
 
-    fn draw_margin(&mut self, line_idx: usize, data: &RenderData) -> Result<()> {
-        write!(self.write, "{:>width$}", line_idx + 1, width = GUTTER)?;
-        let z = if line_idx == data.cursor().ln { 1 } else { 0 };
-        self.write.write(MARGIN_STR[z].as_bytes())?;
-        Ok(())
-    }
     // region: to factor out as customizations
 
     // /// Clear the line on the current cursor.
@@ -156,11 +153,12 @@ impl<'w, W: Write> CrosstermRenderer<'w, W> {
     //     Ok(())
     // }
 
-    pub fn render_to(write: &'w mut W) -> Self {
+    pub fn render_to_with(write: &'w mut W, margin: M) -> Self {
         enable_raw_mode().unwrap();
         CrosstermRenderer {
             write,
             draw_state: DrawState::default(),
+            margin,
         }
     }
 
@@ -190,10 +188,34 @@ impl<'w, W: Write> CrosstermRenderer<'w, W> {
         (0, data.line_count())
     }
 
-    // Position the cursor.
+    // Move to the base of the frame (not the anchor).
+    fn move_to_frame_base(&mut self) -> Result<()> {
+        let up_offset = self.draw_state.anchor.ln + self.draw_state.cursor.ln;
+        self.write.queue(MoveUp(Self::usize_to_u16(up_offset)))?;
+        self.write.queue(MoveToColumn(0))?;
+        Ok(())
+    }
+
+    // Position the cursor right after drawing a frame
+    // (assuming no other cursor adjustments made).
     fn draw_cursor(&mut self, data: &RenderData) -> Result<()> {
-        self.move_cursor_to_line(data.cursor().ln)?;
-        self.move_cursor_to_index(data.cursor().col.min(data.current_line().len()))
+        // Move to the correct row.
+        let line = data.cursor().ln;
+        let frame_height = self.draw_state.height;
+        let relative_ln = line - self.draw_state.low;
+        let up_offset = frame_height - 1 - self.draw_state.anchor.ln - relative_ln;
+        // self.move_cursor_up(up_offset)?;
+        self.write.queue(MoveUp(Self::usize_to_u16(up_offset)))?;
+
+        // Move to the correct column.
+        let col = data.cursor().col.min(data.current_line().len());
+        let n = self.draw_state.anchor.col + col + 1;
+        self.write.queue(MoveToColumn(Self::usize_to_u16(n)))?;
+
+        self.draw_state.cursor.ln = relative_ln;
+        self.draw_state.cursor.col = n;
+
+        Ok(())
     }
 
     /// Draw the line given an index.
@@ -201,48 +223,13 @@ impl<'w, W: Write> CrosstermRenderer<'w, W> {
     fn draw_line(&mut self, data: &RenderData, line: usize) -> Result<()> {
         self.cursor_to_left_term_edge()?;
 
-        self.draw_margin(line, data)?;
+        self.margin.draw_margin(self.write, line, data)?;
 
         data.write_line(line, self.write)?;
 
         self.write.queue(Clear(ClearType::UntilNewLine))?;
         Ok(())
     }
-
-    // /// Move the current cursor to the last line.
-    // fn move_cursor_to_bottom(&mut self) -> Result<()> {
-    //     self.move_cursor_down(self.draw_state.height - self.draw_state.cursor.ln - 1)
-    // }
-
-    fn move_cursor_to_line(&mut self, line: usize) -> Result<()> {
-        let pds_line = self.draw_state.cursor.ln + self.draw_state.line_start;
-
-        if pds_line > line {
-            self.move_cursor_up(pds_line - line)
-        } else if pds_line < line {
-            self.move_cursor_down(line - pds_line)
-        } else {
-            Ok(())
-        }
-    }
-
-    fn move_cursor_to_index(&mut self, index: usize) -> Result<()> {
-        let pds_index = self.draw_state.cursor.col;
-
-        if index < pds_index {
-            self.move_cursor_left(pds_index - index)
-        } else if index > pds_index {
-            self.move_cursor_right(index - pds_index)
-        } else {
-            Ok(())
-        }
-    }
-
-    // /// Move the cursor to the beginning of the line.
-    // fn move_cursor_to_start(&mut self, data: &RenderData) -> Result<()> {
-    //     self.move_cursor_left(data.cursor().col)?;
-    //     Ok(())
-    // }
 
     /// Move the curser to the terminal left margin.
     #[doc(hidden)]
@@ -254,42 +241,14 @@ impl<'w, W: Write> CrosstermRenderer<'w, W> {
     fn usize_to_u16(n: usize) -> u16 {
         n.try_into().unwrap_or(std::u16::MAX)
     }
-
-    /// Move the cursor one line up.
-    fn move_cursor_up(&mut self, n: usize) -> Result<()> {
-        self.write.queue(MoveUp(Self::usize_to_u16(n)))?;
-        self.draw_state.cursor.ln -= n;
-        Ok(())
-    }
-
-    /// Move the cursor one line down.
-    fn move_cursor_down(&mut self, n: usize) -> Result<()> {
-        self.write.queue(MoveDown(Self::usize_to_u16(n)))?;
-        self.draw_state.cursor.ln += n;
-        Ok(())
-    }
-
-    /// Move the cursor leftward using nondestructive backspaces.
-    fn move_cursor_left(&mut self, n: usize) -> Result<()> {
-        self.write.queue(MoveLeft(Self::usize_to_u16(n)))?;
-        self.draw_state.cursor.col -= n;
-        Ok(())
-    }
-
-    /// Move the cursor rightward.
-    fn move_cursor_right(&mut self, n: usize) -> Result<()> {
-        self.write.queue(MoveRight(Self::usize_to_u16(n)))?;
-        self.draw_state.cursor.col += n;
-        Ok(())
-    }
 }
 
-impl Default for CrosstermRenderer<'_, Stdout> {
+impl Default for CrosstermRenderer<'_, Stdout, NoGutter> {
     fn default() -> Self {
         // Since stdout() lives for the entirety of the process.
         // This is safe since the handle will always be valid.
         // The only time where it may die is during shutdown.
         let out = Box::new(stdout());
-        CrosstermRenderer::render_to(Box::leak(out))
+        CrosstermRenderer::render_to_with(Box::leak(out), NoGutter)
     }
 }

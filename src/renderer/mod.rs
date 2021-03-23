@@ -1,5 +1,6 @@
 pub mod data;
 pub mod full;
+pub mod margin;
 
 use self::data::RenderData;
 

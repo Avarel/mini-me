@@ -5,7 +5,7 @@ use std::io::Stdout;
 
 use crate::{
     ext::RopeExt,
-    renderer::{data::RenderData, full::CrosstermRenderer, Renderer},
+    renderer::{data::RenderData, full::CrosstermRenderer, margin::NoGutter, Renderer},
 };
 
 use crossterm::Result;
@@ -21,7 +21,7 @@ pub struct Editor<R> {
     renderer: R,
 }
 
-impl Editor<CrosstermRenderer<'_, Stdout>> {
+impl Editor<CrosstermRenderer<'_, Stdout, NoGutter>> {
     pub fn new() -> Self {
         Editor::with_renderer(CrosstermRenderer::default())
     }
