@@ -1,5 +1,5 @@
-use in_edit::{editor::Editor, editor::keybindings::NormalKeybinding};
-use in_edit::crossterm::Result;
+use mini_me::{editor::Editor, editor::keybindings::NormalKeybinding};
+use mini_me::crossterm::Result;
 
 // Basic bare bones example.
 //
@@ -15,7 +15,7 @@ use in_edit::crossterm::Result;
 fn main() -> Result<()> {
     println!("Write something cool!");
     // Build the prompt.
-    let term = Editor::new();
+    let term = Editor::default();
 
     dbg!(term.read(NormalKeybinding))?;
     Ok(())

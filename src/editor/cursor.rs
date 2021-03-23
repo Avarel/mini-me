@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::ext::RopeExt;
+use crate::util::RopeExt;
 
 use super::Editor;
 

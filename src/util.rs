@@ -1,4 +1,11 @@
+use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 use ropey::{Rope, RopeSlice};
+
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cursor {
+    pub ln: usize,
+    pub col: usize,
+}
 
 pub trait RopeExt {
     fn line_trimmed(&self, line_idx: usize) -> RopeSlice<'_>;
@@ -28,5 +35,20 @@ impl RopeExt for Rope {
         } else {
             rope.slice(..rope_len)
         }
+    }
+}
+
+pub struct RawModeGuard(());
+
+impl RawModeGuard {
+    pub fn acquire() -> RawModeGuard {
+        enable_raw_mode().unwrap();
+        Self(())
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        disable_raw_mode().unwrap();
     }
 }

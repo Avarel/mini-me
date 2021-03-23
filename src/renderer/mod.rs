@@ -1,6 +1,8 @@
 pub mod data;
 pub mod full;
 pub mod margin;
+pub mod header;
+pub mod footer;
 
 use self::data::RenderData;
 

@@ -4,15 +4,18 @@ pub mod keybindings;
 use std::io::Stdout;
 
 use crate::{
-    ext::RopeExt,
-    renderer::{data::RenderData, full::CrosstermRenderer, margin::NoGutter, Renderer},
+    renderer::{
+        data::RenderData,
+        full::{CrosstermRenderer, DefaultRenderer},
+        Renderer,
+    },
+    util::{Cursor, RopeExt},
 };
 
 use crossterm::Result;
 use ropey::Rope;
 
 use self::{cursor::EditorCursor, keybindings::Keybinding};
-use crate::Cursor;
 
 /// Multiline abstraction around a terminal.
 pub struct Editor<R> {
@@ -21,8 +24,8 @@ pub struct Editor<R> {
     renderer: R,
 }
 
-impl Editor<CrosstermRenderer<'_, Stdout, NoGutter>> {
-    pub fn new() -> Self {
+impl Default for Editor<DefaultRenderer<'static, Stdout>> {
+    fn default() -> Self {
         Editor::with_renderer(CrosstermRenderer::default())
     }
 }
@@ -58,7 +61,7 @@ impl<R> Editor<R> {
         self.buf.len_lines()
     }
 
-    pub fn cursor(&mut self) -> EditorCursor<'_, R> {
+    pub fn cursor(&mut self) -> EditorCursor<R> {
         EditorCursor { editor: self }
     }
 

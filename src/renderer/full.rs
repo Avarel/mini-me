@@ -1,25 +1,29 @@
-use std::io::{self, stdout, Write};
-use std::{convert::TryInto, io::Stdout};
+use std::{
+    convert::TryInto,
+    io::{stdout, Stdout, Write},
+};
 
-use super::{margin::{Margin, NoGutter}, RenderData, Renderer};
-use crate::Cursor;
+use super::{
+    footer::{Footer, NoFooter},
+    header::{Header, NoHeader},
+    margin::{Margin, NoMargin},
+    RenderData, Renderer,
+};
+use crate::util::{Cursor, RawModeGuard};
 
 use crossterm::{
     cursor::*,
-    terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
+    terminal::{Clear, ClearType},
     QueueableCommand, Result,
 };
 
-pub struct CrosstermRenderer<'b, W, M> {
+pub struct CrosstermRenderer<'b, W, M, H, F> {
+    _guard: RawModeGuard,
     write: &'b mut W,
     margin: M,
+    header: H,
+    footer: F,
     draw_state: DrawState,
-}
-
-impl<W, M> Drop for CrosstermRenderer<'_, W, M> {
-    fn drop(&mut self) {
-        disable_raw_mode().unwrap();
-    }
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
@@ -35,14 +39,17 @@ struct DrawState {
     cursor: Cursor,
 }
 
-impl<W: Write, M: Margin<W>> Renderer for CrosstermRenderer<'_, W, M> {
+impl<W: Write, M: Margin<W>, H: Header<W>, F: Footer<W>> Renderer
+    for CrosstermRenderer<'_, W, M, H, F>
+{
     /// Draw the prompt.
     fn draw(&mut self, data: RenderData) -> Result<()> {
         let (low, high) = self.calculate_draw_range(&data);
 
         self.draw_state = DrawState::default();
 
-        self.draw_header(|w| write!(w, "      ╭─── Input Prompt ─────────"))?;
+        // self.draw_header(|w| write!(w, "      ╭─── Input Prompt ─────────"))?;
+        self.draw_header(&data)?;
 
         // Print out the contents.
         for i in low..high {
@@ -62,16 +69,7 @@ impl<W: Write, M: Margin<W>> Renderer for CrosstermRenderer<'_, W, M> {
 
         self.write.queue(Clear(ClearType::FromCursorDown))?;
 
-        self.draw_footer(|w| {
-            write!(
-                w,
-                "      ╰──┤ Lines: {} ├─┤ Chars: {} ├─┤ Ln: {}, Col: {}",
-                data.line_count(),
-                data.char_count(),
-                data.cursor().ln,
-                data.cursor().col.min(data.current_line().len())
-            )
-        })?;
+        self.draw_footer(&data)?;
 
         self.draw_cursor(&data)?;
         self.flush()
@@ -107,66 +105,42 @@ impl<W: Write, M: Margin<W>> Renderer for CrosstermRenderer<'_, W, M> {
     }
 }
 
-const RESERVED_ROWS: usize = 2;
-
-impl<'w, W: Write> CrosstermRenderer<'w, W, NoGutter> {
+impl<'w, W: Write> DefaultRenderer<'w, W> {
     pub fn render_to(write: &'w mut W) -> Self {
-        enable_raw_mode().unwrap();
         CrosstermRenderer {
+            _guard: RawModeGuard::acquire(),
             write,
             draw_state: DrawState::default(),
-            margin: NoGutter,
+            margin: NoMargin,
+            header: NoHeader,
+            footer: NoFooter,
         }
     }
 }
 
-impl<'w, W: Write, M: Margin<W>> CrosstermRenderer<'w, W, M> {
-    fn draw_header(&mut self, mut f: impl FnMut(&mut W) -> io::Result<()>) -> Result<()> {
-        self.draw_state.height += 1;
-        self.draw_state.anchor.ln += 1;
+impl<'w, W: Write, M: Margin<W>, H: Header<W>, F: Footer<W>> CrosstermRenderer<'w, W, M, H, F> {
+    fn draw_header(&mut self, data: &RenderData) -> Result<()> {
+        self.draw_state.height += self.header.height();
+        self.draw_state.anchor.ln += self.header.height();
 
         self.cursor_to_left_term_edge()?;
-        f(self.write)?;
-        self.write.queue(Clear(ClearType::UntilNewLine))?;
-        self.write.write(b"\n")?;
+        self.header.draw(self.write, data)?;
         Ok(())
     }
 
-    fn draw_footer(&mut self, mut f: impl FnMut(&mut W) -> io::Result<()>) -> Result<()> {
-        self.draw_state.height += 1;
+    fn draw_footer(&mut self, data: &RenderData) -> Result<()> {
+        self.draw_state.height += self.footer.height();
 
-        self.write.write(b"\n")?;
         self.cursor_to_left_term_edge()?;
-        f(self.write)?;
-        self.write.queue(Clear(ClearType::UntilNewLine))?;
+        self.footer.draw(self.write, data)?;
         Ok(())
-    }
-
-    // region: to factor out as customizations
-
-    // /// Clear the line on the current cursor.
-    // fn clear_line(&mut self) -> Result<()> {
-    //     self.write.queue(Clear(ClearType::CurrentLine))?;
-    //     self.cursor_to_lmargin()?;
-    //     self.draw_state.cursor.col = 0;
-
-    //     Ok(())
-    // }
-
-    pub fn render_to_with(write: &'w mut W, margin: M) -> Self {
-        enable_raw_mode().unwrap();
-        CrosstermRenderer {
-            write,
-            draw_state: DrawState::default(),
-            margin,
-        }
     }
 
     fn calculate_draw_range(&self, data: &RenderData) -> (usize, usize) {
         if let Ok((_, rows)) = crossterm::terminal::size() {
             // Rows of the terminal.
             let term_rows: usize = rows.try_into().unwrap();
-            let term_rows = term_rows - RESERVED_ROWS;
+            let term_rows = term_rows - self.header.height() - self.footer.height();
             // Rows of the data to draw.
             let data_rows = data.line_count();
             // Current line of the data.
@@ -223,7 +197,7 @@ impl<'w, W: Write, M: Margin<W>> CrosstermRenderer<'w, W, M> {
     fn draw_line(&mut self, data: &RenderData, line: usize) -> Result<()> {
         self.cursor_to_left_term_edge()?;
 
-        self.margin.draw_margin(self.write, line, data)?;
+        self.margin.draw(self.write, line, data)?;
 
         data.write_line(line, self.write)?;
 
@@ -243,12 +217,57 @@ impl<'w, W: Write, M: Margin<W>> CrosstermRenderer<'w, W, M> {
     }
 }
 
-impl Default for CrosstermRenderer<'_, Stdout, NoGutter> {
+// region: Swap constructors
+impl<'w, W: Write, M1, H, F> CrosstermRenderer<'w, W, M1, H, F> {
+    /// Swap out a margin formatter.
+    pub fn margin<M2>(self, margin: M2) -> CrosstermRenderer<'w, W, M2, H, F> {
+        CrosstermRenderer {
+            _guard: self._guard,
+            write: self.write,
+            draw_state: self.draw_state,
+            margin,
+            header: self.header,
+            footer: self.footer,
+        }
+    }
+}
+
+impl<'w, W: Write, M, H1, F> CrosstermRenderer<'w, W, M, H1, F> {
+    /// Swap out a header formatter.
+    pub fn header<H2>(self, header: H2) -> CrosstermRenderer<'w, W, M, H2, F> {
+        CrosstermRenderer {
+            _guard: self._guard,
+            write: self.write,
+            draw_state: self.draw_state,
+            margin: self.margin,
+            header,
+            footer: self.footer,
+        }
+    }
+}
+
+impl<'w, W: Write, M, H, F1> CrosstermRenderer<'w, W, M, H, F1> {
+    /// Swap out a footer formatter.
+    pub fn footer<F2>(self, footer: F2) -> CrosstermRenderer<'w, W, M, H, F2> {
+        CrosstermRenderer {
+            _guard: self._guard,
+            write: self.write,
+            draw_state: self.draw_state,
+            margin: self.margin,
+            header: self.header,
+            footer,
+        }
+    }
+}
+
+pub type DefaultRenderer<'w, W> = CrosstermRenderer<'w, W, NoMargin, NoHeader, NoFooter>;
+
+impl Default for DefaultRenderer<'static, Stdout> {
     fn default() -> Self {
         // Since stdout() lives for the entirety of the process.
         // This is safe since the handle will always be valid.
         // The only time where it may die is during shutdown.
         let out = Box::new(stdout());
-        CrosstermRenderer::render_to_with(Box::leak(out), NoGutter)
+        CrosstermRenderer::render_to(Box::leak(out))
     }
 }

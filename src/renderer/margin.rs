@@ -6,28 +6,37 @@ use crossterm::Result;
 
 pub trait Margin<W> {
     fn width(&self) -> usize;
-    fn draw_margin(&mut self, write: &mut W, line_idx: usize, data: &RenderData) -> Result<()>;
+    fn draw(&mut self, write: &mut W, line_idx: usize, data: &RenderData) -> Result<()>;
 }
 
-pub struct NoGutter;
+// impl<W: Write> Margin<W>for Box<dyn Margin<W>> {
+//     fn width(&self) -> usize {
+//         (**self).width()
+//     }
+//     fn draw(&mut self, write: &mut W, line_idx: usize, data: &RenderData) -> Result<()> {
+//         (**self).draw(write, line_idx, data)
+//     }
+// }
 
-impl<W: Write> Margin<W> for NoGutter {
+pub struct NoMargin;
+
+impl<W> Margin<W> for NoMargin {
     fn width(&self) -> usize {
         0
     }
 
-    fn draw_margin(&mut self, _: &mut W, _: usize, _: &RenderData) -> Result<()> {
+    fn draw(&mut self, _: &mut W, _: usize, _: &RenderData) -> Result<()> {
         Ok(())
     }
 }
 
-pub struct SimpleGutter<'s> {
+pub struct GutterMargin<'s> {
     width: usize,
     delim: &'s [&'s str; 2],
     delim_len: usize,
 }
 
-impl<'s> SimpleGutter<'s> {
+impl<'s> GutterMargin<'s> {
     pub fn new(width: usize) -> Self {
         Self::with_delim(width, &[" │ ", " ┃ "])
     }
@@ -45,12 +54,12 @@ impl<'s> SimpleGutter<'s> {
     }
 }
 
-impl<W: Write> Margin<W> for SimpleGutter<'_> {
+impl<W: Write> Margin<W> for GutterMargin<'_> {
     fn width(&self) -> usize {
         self.width + self.delim_len
     }
 
-    fn draw_margin(&mut self, write: &mut W, line_idx: usize, data: &RenderData) -> Result<()> {
+    fn draw(&mut self, write: &mut W, line_idx: usize, data: &RenderData) -> Result<()> {
         write!(write, "{:>width$}", line_idx + 1, width = self.width)?;
         if self.delim.len() != 0 {
             let z = if line_idx == data.cursor().ln { 1 } else { 0 };
