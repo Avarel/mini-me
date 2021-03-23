@@ -1,4 +1,4 @@
-use in_edit::{crossterm::Result, keybindings::NormalKeybinding};
+use in_edit::{crossterm::Result, editor::keybindings::NormalKeybinding};
 use in_edit::{editor::Editor, renderer::full::CrosstermRenderer};
 
 fn main() -> Result<()> {
@@ -7,6 +7,6 @@ fn main() -> Result<()> {
     let mut lock = stdout.lock();
     // Print out some prompt using styling options.
     let term = Editor::with_renderer(CrosstermRenderer::render_to(&mut lock));
-    println!("{}", term.read(NormalKeybinding)?);
+    dbg!(term.read(NormalKeybinding)?);
     Ok(())
 }

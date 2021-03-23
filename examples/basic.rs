@@ -1,4 +1,4 @@
-use in_edit::{editor::Editor, keybindings::NormalKeybinding};
+use in_edit::{editor::Editor, editor::keybindings::NormalKeybinding};
 use in_edit::crossterm::Result;
 
 // Basic bare bones example.

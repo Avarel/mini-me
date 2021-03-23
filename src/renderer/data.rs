@@ -3,7 +3,7 @@ use std::{
     io::{self, Write},
 };
 
-use crate::{editor::Cursor, ext::RopeExt};
+use crate::{Cursor, ext::RopeExt};
 
 use ropey::Rope;
 
