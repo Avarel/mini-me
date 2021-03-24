@@ -3,22 +3,29 @@ use std::{
     io::{stdout, Stdout, Write},
 };
 
-use super::{
-    footer::{Footer, NoFooter},
-    header::{Header, NoHeader},
-    margin::{Margin, NoMargin},
-    RenderData, Renderer,
-};
+use super::{RenderData, Renderer, styles::{Footer, Header, Margin, NoFooter, NoHeader, NoMargin}};
 use crate::{
-    util::{Cursor, RawModeGuard},
+    util::{Cursor},
     Result,
 };
 
-use crossterm::{
-    cursor::*,
-    terminal::{Clear, ClearType},
-    QueueableCommand,
-};
+use crossterm::{QueueableCommand, cursor::*, terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode}};
+
+pub struct RawModeGuard(());
+
+impl RawModeGuard {
+    pub(crate) fn acquire() -> RawModeGuard {
+        enable_raw_mode().unwrap();
+        Self(())
+    }
+}
+
+impl Drop for RawModeGuard {
+    fn drop(&mut self) {
+        disable_raw_mode().unwrap();
+    }
+}
+
 
 pub struct CrosstermRenderer<'b, W, M, H, F> {
     _guard: RawModeGuard,
@@ -128,29 +135,6 @@ impl<'w, W: Write> DefaultRenderer<'w, W> {
 }
 
 impl<'w, W: Write, M: Margin<W>, H: Header<W>, F: Footer<W>> CrosstermRenderer<'w, W, M, H, F> {
-    fn draw_header(&mut self, data: &RenderData) -> Result<()> {
-        self.draw_state.height += self.header.rows();
-        self.draw_state.anchor.ln += self.header.rows();
-
-        self.cursor_to_left_term_edge()?;
-        self.header.draw(self.write, data)?;
-        if self.header.rows() > 0 {
-            self.write.write(b"\n")?;
-        }
-        Ok(())
-    }
-
-    fn draw_footer(&mut self, data: &RenderData) -> Result<()> {
-        self.draw_state.height += self.footer.rows();
-
-        self.cursor_to_left_term_edge()?;
-        if self.footer.rows() > 0 {
-            self.write.write(b"\n")?;
-        }
-        self.footer.draw(self.write, data)?;
-        Ok(())
-    }
-
     fn calculate_draw_range(&self, data: &RenderData) -> (usize, usize) {
         if let Ok((_, rows)) = crossterm::terminal::size() {
             // Rows of the terminal.
@@ -214,6 +198,18 @@ impl<'w, W: Write, M: Margin<W>, H: Header<W>, F: Footer<W>> CrosstermRenderer<'
         Ok(())
     }
 
+    fn draw_header(&mut self, data: &RenderData) -> Result<()> {
+        self.draw_state.height += self.header.rows();
+        self.draw_state.anchor.ln += self.header.rows();
+
+        self.cursor_to_left_term_edge()?;
+        self.header.draw(self.write, data)?;
+        if self.header.rows() > 0 {
+            self.write.write(b"\n")?;
+        }
+        Ok(())
+    }
+
     /// Draw the line given an index.
     /// This method does not move the cursor.
     fn draw_line(&mut self, data: &RenderData, line: usize) -> Result<()> {
@@ -224,6 +220,17 @@ impl<'w, W: Write, M: Margin<W>, H: Header<W>, F: Footer<W>> CrosstermRenderer<'
         data.write_line(line, self.write)?;
 
         self.write.queue(Clear(ClearType::UntilNewLine))?;
+        Ok(())
+    }
+
+    fn draw_footer(&mut self, data: &RenderData) -> Result<()> {
+        self.draw_state.height += self.footer.rows();
+
+        self.cursor_to_left_term_edge()?;
+        if self.footer.rows() > 0 {
+            self.write.write(b"\n")?;
+        }
+        self.footer.draw(self.write, data)?;
         Ok(())
     }
 

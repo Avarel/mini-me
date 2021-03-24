@@ -4,15 +4,10 @@ pub mod keybindings;
 use std::io::Stdout;
 
 use self::{cursor::EditorCursor, keybindings::Keybinding};
-use crate::{
-    renderer::{
-        data::RenderData,
+use crate::{Result, renderer::{
         full::{CrosstermRenderer, DefaultRenderer},
-        Renderer,
-    },
-    util::{Cursor, RopeExt},
-    Result,
-};
+        RenderData, Renderer,
+    }, util::{Cursor, trimmed}};
 
 use ropey::Rope;
 
@@ -50,7 +45,7 @@ impl<R: Renderer> Editor<R> {
 
         self.renderer.finish()?;
 
-        Ok(self.buf.trimmed().to_string())
+        Ok(trimmed(self.buf.slice(..)).to_string())
     }
 }
 

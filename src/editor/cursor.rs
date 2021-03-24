@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use crate::util::RopeExt;
+use crate::util::trimmed;
 
 use super::Editor;
 
@@ -30,14 +30,11 @@ impl<R> EditorCursor<'_, R> {
     }
 
     pub fn current_line_len(&self) -> usize {
-        self.editor
-            .buf
-            .line_trimmed(self.editor.cursor.ln)
-            .len_chars()
+        trimmed(self.editor.buf.line(self.editor.cursor.ln)).len_chars()
     }
 
     pub fn current_line(&self) -> Cow<str> {
-        Cow::from(self.editor.buf.line_trimmed(self.editor.cursor.ln))
+        Cow::from(trimmed(self.editor.buf.line(self.editor.cursor.ln)))
     }
 
     pub fn curr_char(&self) -> char {
@@ -45,7 +42,9 @@ impl<R> EditorCursor<'_, R> {
     }
 
     pub fn move_up(&mut self) {
-        if self.editor.cursor.ln > 0 {
+        if self.editor.cursor.ln == 0 {
+            self.editor.cursor.col = 0;
+        } else {
             self.editor.cursor.ln -= 1;
         }
     }
@@ -98,7 +97,9 @@ impl<R> EditorCursor<'_, R> {
     }
 
     pub fn move_down(&mut self) {
-        if self.editor.cursor.ln + 1 < self.editor.line_count() {
+        if self.editor.cursor.ln + 1 == self.editor.line_count() {
+            self.editor.cursor.col = self.current_line_len();
+        } else {
             self.editor.cursor.ln += 1;
         }
     }
