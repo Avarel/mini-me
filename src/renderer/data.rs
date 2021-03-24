@@ -6,7 +6,6 @@ use std::{
 use crate::util::{Cursor, RopeExt};
 
 use ropey::Rope;
-
 #[derive(Clone, Copy)]
 pub struct RenderData<'b> {
     buf: &'b Rope,

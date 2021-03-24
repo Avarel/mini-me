@@ -1,9 +1,6 @@
-use crate::{editor::Editor, renderer::Renderer};
+use crate::{editor::Editor, renderer::Renderer, Result};
 
-use crossterm::{
-    event::{read, Event, KeyCode, KeyEvent, KeyModifiers},
-    Result,
-};
+use crossterm::event::{read, Event, KeyCode, KeyEvent, KeyModifiers};
 
 pub trait Keybinding {
     fn read(&self, editor: &mut Editor<impl Renderer>) -> Result<bool>;
@@ -69,9 +66,7 @@ impl NormalKeybinding {
             KeyCode::Enter if cursor.current_line_len() == 0 && cursor.ln() + 1 == ln_count => {
                 return Ok(false)
             }
-            KeyCode::Enter => {
-                cursor.type_char('\n');
-            }
+            KeyCode::Enter => cursor.type_char('\n'),
             _ => { /* ignore */ }
         }
         Ok(true)

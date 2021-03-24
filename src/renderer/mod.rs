@@ -6,7 +6,7 @@ pub mod footer;
 
 use self::data::RenderData;
 
-use crossterm::Result;
+use crate::Result;
 
 pub trait Renderer {
     fn draw(&mut self, data: RenderData) -> Result<()>;

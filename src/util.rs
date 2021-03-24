@@ -7,7 +7,7 @@ pub struct Cursor {
     pub col: usize,
 }
 
-pub trait RopeExt {
+pub(crate) trait RopeExt {
     fn line_trimmed(&self, line_idx: usize) -> RopeSlice<'_>;
     fn trimmed(&self) -> RopeSlice<'_>;
 }
@@ -38,10 +38,10 @@ impl RopeExt for Rope {
     }
 }
 
-pub struct RawModeGuard(());
+pub(crate) struct RawModeGuard(());
 
 impl RawModeGuard {
-    pub fn acquire() -> RawModeGuard {
+    pub(crate) fn acquire() -> RawModeGuard {
         enable_raw_mode().unwrap();
         Self(())
     }

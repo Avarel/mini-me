@@ -1,20 +1,21 @@
 use std::io::Write;
 
 use super::data::RenderData;
+use crate::Result;
 use crossterm::{
     terminal::{Clear, ClearType},
-    QueueableCommand, Result,
+    QueueableCommand,
 };
 
 pub trait Header<W> {
-    fn height(&self) -> usize;
+    fn rows(&self) -> usize;
     fn draw(&mut self, write: &mut W, data: &RenderData) -> Result<()>;
 }
 
 pub struct NoHeader;
 
 impl<W> Header<W> for NoHeader {
-    fn height(&self) -> usize {
+    fn rows(&self) -> usize {
         0
     }
 
@@ -26,14 +27,13 @@ impl<W> Header<W> for NoHeader {
 pub struct ClassicHeader;
 
 impl<W: Write> Header<W> for ClassicHeader {
-    fn height(&self) -> usize {
+    fn rows(&self) -> usize {
         1
     }
 
     fn draw(&mut self, w: &mut W, _: &RenderData) -> Result<()> {
         write!(w, "      ╭─── Input Prompt ─────────")?;
         w.queue(Clear(ClearType::UntilNewLine))?;
-        w.write(b"\n")?;
         Ok(())
     }
 }

@@ -1,17 +1,21 @@
 use std::io::Write;
 
 use super::data::RenderData;
-use crossterm::{QueueableCommand, Result, terminal::{Clear, ClearType}};
+use crate::Result;
+use crossterm::{
+    terminal::{Clear, ClearType},
+    QueueableCommand,
+};
 
 pub trait Footer<W> {
-    fn height(&self) -> usize;
+    fn rows(&self) -> usize;
     fn draw(&mut self, write: &mut W, data: &RenderData) -> Result<()>;
 }
 
 pub struct NoFooter;
 
 impl<W> Footer<W> for NoFooter {
-    fn height(&self) -> usize {
+    fn rows(&self) -> usize {
         0
     }
 
@@ -23,12 +27,11 @@ impl<W> Footer<W> for NoFooter {
 pub struct ClassicFooter;
 
 impl<W: Write> Footer<W> for ClassicFooter {
-    fn height(&self) -> usize {
+    fn rows(&self) -> usize {
         1
     }
 
     fn draw(&mut self, w: &mut W, data: &RenderData) -> Result<()> {
-        w.write(b"\n")?;
         write!(
             w,
             "      ╰──┤ Lines: {} ├─┤ Chars: {} ├─┤ Ln: {}, Col: {}",

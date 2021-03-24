@@ -1,10 +1,9 @@
-use mini_me::{editor::Editor, editor::keybindings::NormalKeybinding};
-use mini_me::crossterm::Result;
+use mini_me::{editor::keybindings::NormalKeybinding, editor::Editor, Result};
 
 // Basic bare bones example.
 //
 // Sample output:
-//      
+//
 //      Write something cool!
 //      hello there
 //      how are you?

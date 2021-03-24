@@ -9,12 +9,15 @@ use super::{
     margin::{Margin, NoMargin},
     RenderData, Renderer,
 };
-use crate::util::{Cursor, RawModeGuard};
+use crate::{
+    util::{Cursor, RawModeGuard},
+    Result,
+};
 
 use crossterm::{
     cursor::*,
     terminal::{Clear, ClearType},
-    QueueableCommand, Result,
+    QueueableCommand,
 };
 
 pub struct CrosstermRenderer<'b, W, M, H, F> {
@@ -24,6 +27,7 @@ pub struct CrosstermRenderer<'b, W, M, H, F> {
     header: H,
     footer: F,
     draw_state: DrawState,
+    max_height: Option<usize>,
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,6 +49,10 @@ impl<W: Write, M: Margin<W>, H: Header<W>, F: Footer<W>> Renderer
     /// Draw the prompt.
     fn draw(&mut self, data: RenderData) -> Result<()> {
         let (low, high) = self.calculate_draw_range(&data);
+
+        if (low, high) == (0, 0) {
+            return Ok(());
+        }
 
         self.draw_state = DrawState::default();
 
@@ -114,24 +122,31 @@ impl<'w, W: Write> DefaultRenderer<'w, W> {
             margin: NoMargin,
             header: NoHeader,
             footer: NoFooter,
+            max_height: None,
         }
     }
 }
 
 impl<'w, W: Write, M: Margin<W>, H: Header<W>, F: Footer<W>> CrosstermRenderer<'w, W, M, H, F> {
     fn draw_header(&mut self, data: &RenderData) -> Result<()> {
-        self.draw_state.height += self.header.height();
-        self.draw_state.anchor.ln += self.header.height();
+        self.draw_state.height += self.header.rows();
+        self.draw_state.anchor.ln += self.header.rows();
 
         self.cursor_to_left_term_edge()?;
         self.header.draw(self.write, data)?;
+        if self.header.rows() > 0 {
+            self.write.write(b"\n")?;
+        }
         Ok(())
     }
 
     fn draw_footer(&mut self, data: &RenderData) -> Result<()> {
-        self.draw_state.height += self.footer.height();
+        self.draw_state.height += self.footer.rows();
 
         self.cursor_to_left_term_edge()?;
+        if self.footer.rows() > 0 {
+            self.write.write(b"\n")?;
+        }
         self.footer.draw(self.write, data)?;
         Ok(())
     }
@@ -140,7 +155,14 @@ impl<'w, W: Write, M: Margin<W>, H: Header<W>, F: Footer<W>> CrosstermRenderer<'
         if let Ok((_, rows)) = crossterm::terminal::size() {
             // Rows of the terminal.
             let term_rows: usize = rows.try_into().unwrap();
-            let term_rows = term_rows - self.header.height() - self.footer.height();
+            let term_rows = self
+                .max_height
+                .unwrap_or(usize::MAX)
+                .min(term_rows)
+                .saturating_sub(self.header.rows() + self.footer.rows());
+            if term_rows == 0 {
+                return (0, 0);
+            }
             // Rows of the data to draw.
             let data_rows = data.line_count();
             // Current line of the data.
@@ -228,6 +250,7 @@ impl<'w, W: Write, M1, H, F> CrosstermRenderer<'w, W, M1, H, F> {
             margin,
             header: self.header,
             footer: self.footer,
+            max_height: self.max_height,
         }
     }
 }
@@ -242,6 +265,7 @@ impl<'w, W: Write, M, H1, F> CrosstermRenderer<'w, W, M, H1, F> {
             margin: self.margin,
             header,
             footer: self.footer,
+            max_height: self.max_height,
         }
     }
 }
@@ -256,7 +280,14 @@ impl<'w, W: Write, M, H, F1> CrosstermRenderer<'w, W, M, H, F1> {
             margin: self.margin,
             header: self.header,
             footer,
+            max_height: self.max_height,
         }
+    }
+}
+
+impl<'w, W, M, H, F> CrosstermRenderer<'w, W, M, H, F> {
+    pub fn max_height(self, max_height: Option<usize>) -> Self {
+        Self { max_height, ..self }
     }
 }
 

@@ -3,6 +3,7 @@ pub mod keybindings;
 
 use std::io::Stdout;
 
+use self::{cursor::EditorCursor, keybindings::Keybinding};
 use crate::{
     renderer::{
         data::RenderData,
@@ -10,14 +11,11 @@ use crate::{
         Renderer,
     },
     util::{Cursor, RopeExt},
+    Result,
 };
 
-use crossterm::Result;
 use ropey::Rope;
 
-use self::{cursor::EditorCursor, keybindings::Keybinding};
-
-/// Multiline abstraction around a terminal.
 pub struct Editor<R> {
     cursor: Cursor,
     buf: Rope,

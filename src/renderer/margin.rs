@@ -2,7 +2,7 @@ use std::io::Write;
 
 use super::data::RenderData;
 
-use crossterm::Result;
+use crate::Result;
 
 pub trait Margin<W> {
     fn width(&self) -> usize;
@@ -30,41 +30,33 @@ impl<W> Margin<W> for NoMargin {
     }
 }
 
-pub struct GutterMargin<'s> {
-    width: usize,
-    delim: &'s [&'s str; 2],
-    delim_len: usize,
+pub struct ClassicGutter;
+
+impl ClassicGutter {
+    const WIDTH: usize = 5;
+    const PAD: usize = 3;
+
+    const DELIM: &'static str = " │ ";
+    const DELIM_BOLD: &'static str = " ┃ ";
 }
 
-impl<'s> GutterMargin<'s> {
-    pub fn new(width: usize) -> Self {
-        Self::with_delim(width, &[" │ ", " ┃ "])
-    }
-
-    pub fn with_delim(width: usize, delim: &'s [&'s str; 2]) -> Self {
-        assert!(
-            delim[0].len() == delim[1].len(),
-            "All delimiters must be the same size"
-        );
-        Self {
-            width,
-            delim,
-            delim_len: delim[0].chars().count(),
-        }
-    }
-}
-
-impl<W: Write> Margin<W> for GutterMargin<'_> {
+impl<W: Write> Margin<W> for ClassicGutter {
     fn width(&self) -> usize {
-        self.width + self.delim_len
+        Self::WIDTH + Self::PAD
     }
 
     fn draw(&mut self, write: &mut W, line_idx: usize, data: &RenderData) -> Result<()> {
-        write!(write, "{:>width$}", line_idx + 1, width = self.width)?;
-        if self.delim.len() != 0 {
-            let z = if line_idx == data.cursor().ln { 1 } else { 0 };
-            write.write(self.delim[z].as_bytes())?;
-        }
+        write!(write, "{:>width$}", line_idx + 1, width = 5)?;
+
+        write.write(
+            if line_idx == data.cursor().ln {
+                Self::DELIM_BOLD
+            } else {
+                Self::DELIM
+            }
+            .as_bytes(),
+        )?;
+
         Ok(())
     }
 }
