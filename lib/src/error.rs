@@ -2,12 +2,12 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum Error {
-    #[error("io error")]
+    #[error("IO error")]
     Io(#[from] std::io::Error),
-    #[error("the data for key `{0}` is not available")]
+    #[error("Terminal error: {0}")]
     Terminal(#[from] crossterm::ErrorKind),
     #[allow(dead_code)]
-    #[error("unknown error")]
+    #[error("Unknown error")]
     Unknown,
 }
 

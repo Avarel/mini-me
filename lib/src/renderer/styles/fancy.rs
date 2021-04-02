@@ -1,4 +1,4 @@
-use super::{Footer, Margin};
+use super::{Footer, Header, Margin};
 use crate::{renderer::RenderData, Result};
 use crossterm::{
     style::Colorize,
@@ -6,6 +6,25 @@ use crossterm::{
     QueueableCommand,
 };
 use std::io::Write;
+
+pub struct FancyHeader<'s>(pub &'s str);
+
+impl<W: Write> Header<W> for FancyHeader<'_> {
+    fn rows(&self) -> usize {
+        1
+    }
+
+    fn draw(&mut self, w: &mut W, _: &RenderData) -> Result<()> {
+        write!(
+            w,
+            "{} {}",
+            "       ".black().on_dark_grey(),
+            self.0
+        )?;
+        w.queue(Clear(ClearType::UntilNewLine))?;
+        Ok(())
+    }
+}
 
 pub struct FancyGutter;
 
@@ -23,7 +42,7 @@ impl<W: Write> Margin<W> for FancyGutter {
             if line_idx == data.cursor().ln as usize {
                 write!(
                     write,
-                    "{}   {}",
+                    "{} {}",
                     "      ▶ ".black().on_green(),
                     Self::MSG.dark_grey()
                 )?;
@@ -39,13 +58,13 @@ impl<W: Write> Margin<W> for FancyGutter {
             write!(
                 write,
                 "{} ",
-                format!("  {:>5} ", line_idx + 1).black().on_grey()
+                format!("  {:>5} ", line_idx + 1).black().on_dark_grey()
             )?;
         } else {
             write!(
                 write,
                 "{}  ",
-                format!(" {:>5} ", line_idx + 1).black().on_grey()
+                format!(" {:>5} ", line_idx + 1).black().on_dark_grey()
             )?;
         }
 
@@ -64,20 +83,14 @@ impl<W: Write> Footer<W> for FancyFooter {
         write!(
             w,
             "{}{}{}{}",
-            "   info ".black().on_grey(),
-            format!(" Lines: {:>3} ", data.line_count())
-                .black()
-                .on_cyan(),
-            format!(" Chars: {:>3} ", data.char_count())
-                .black()
-                .on_dark_cyan(),
+            "  info ".black().on_dark_grey(),
+            format!(" Lines: {:>3} ", data.line_count()),
+            format!(" Chars: {:>3} ", data.char_count()),
             format!(
                 " Ln {}, Col {} ",
                 data.cursor().ln,
                 data.cursor().col.min(data.current_line().len())
             )
-            .black()
-            .on_blue()
         )?;
 
         w.queue(Clear(ClearType::UntilNewLine))?;

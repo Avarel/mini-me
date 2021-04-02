@@ -1,7 +1,7 @@
 pub mod cursor;
 pub mod keybindings;
 
-use std::io::Stdout;
+use std::io::{Read, Stdout};
 
 use self::{cursor::EditorCursor, keybindings::Keybinding};
 use crate::{Result, renderer::{
@@ -30,6 +30,11 @@ impl<R: Renderer> Editor<R> {
             cursor: Cursor::default(),
             renderer,
         }
+    }
+
+    pub fn set_contents(&mut self, reader: impl Read) -> Result<()> {
+        self.buf = Rope::from_reader(reader)?;
+        Ok(())
     }
 
     pub fn read(mut self, keybinding: impl Keybinding) -> Result<String> {

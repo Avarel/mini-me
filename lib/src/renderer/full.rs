@@ -3,20 +3,24 @@ use std::{
     io::{stdout, Stdout, Write},
 };
 
-use super::{RenderData, Renderer, styles::{Footer, Header, Margin, NoFooter, NoHeader, NoMargin}};
-use crate::{
-    util::{Cursor},
-    Result,
+use super::{
+    styles::{Footer, Header, Margin, NoStyle},
+    RenderData, Renderer,
+};
+use crate::{util::Cursor, Result};
+
+use crossterm::{
+    cursor::*,
+    terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
+    QueueableCommand,
 };
 
-use crossterm::{QueueableCommand, cursor::*, terminal::{Clear, ClearType, disable_raw_mode, enable_raw_mode}};
-
-pub struct RawModeGuard(());
+struct RawModeGuard();
 
 impl RawModeGuard {
-    pub(crate) fn acquire() -> RawModeGuard {
-        enable_raw_mode().unwrap();
-        Self(())
+    fn acquire() -> Result<RawModeGuard> {
+        enable_raw_mode()?;
+        Ok(Self())
     }
 }
 
@@ -26,9 +30,8 @@ impl Drop for RawModeGuard {
     }
 }
 
-
 pub struct CrosstermRenderer<'b, W, M, H, F> {
-    _guard: RawModeGuard,
+    guard: RawModeGuard,
     write: &'b mut W,
     margin: M,
     header: H,
@@ -50,8 +53,12 @@ struct DrawState {
     cursor: Cursor,
 }
 
-impl<W: Write, M: Margin<W>, H: Header<W>, F: Footer<W>> Renderer
-    for CrosstermRenderer<'_, W, M, H, F>
+impl<W, M, H, F> Renderer for CrosstermRenderer<'_, W, M, H, F>
+where
+    W: Write,
+    M: Margin<W>,
+    H: Header<W>,
+    F: Footer<W>,
 {
     /// Draw the prompt.
     fn draw(&mut self, data: RenderData) -> Result<()> {
@@ -120,21 +127,79 @@ impl<W: Write, M: Margin<W>, H: Header<W>, F: Footer<W>> Renderer
     }
 }
 
-impl<'w, W: Write> DefaultRenderer<'w, W> {
+impl<'w, W> DefaultRenderer<'w, W> {
     pub fn render_to(write: &'w mut W) -> Self {
         CrosstermRenderer {
-            _guard: RawModeGuard::acquire(),
+            guard: RawModeGuard::acquire().unwrap(),
             write,
             draw_state: DrawState::default(),
-            margin: NoMargin,
-            header: NoHeader,
-            footer: NoFooter,
+            margin: NoStyle,
+            header: NoStyle,
+            footer: NoStyle,
             max_height: None,
         }
     }
 }
 
-impl<'w, W: Write, M: Margin<W>, H: Header<W>, F: Footer<W>> CrosstermRenderer<'w, W, M, H, F> {
+impl<'w, W, M, H, F> CrosstermRenderer<'w, W, M, H, F> {
+    pub fn max_height(self, max_height: Option<usize>) -> Self {
+        Self { max_height, ..self }
+    }
+}
+
+// region: Swap constructors
+impl<'w, W, M1, H, F> CrosstermRenderer<'w, W, M1, H, F> {
+    /// Swap out a margin formatter.
+    pub fn margin<M2>(self, margin: M2) -> CrosstermRenderer<'w, W, M2, H, F> {
+        CrosstermRenderer {
+            guard: self.guard,
+            write: self.write,
+            draw_state: self.draw_state,
+            margin,
+            header: self.header,
+            footer: self.footer,
+            max_height: self.max_height,
+        }
+    }
+}
+
+impl<'w, W, M, H1, F> CrosstermRenderer<'w, W, M, H1, F> {
+    /// Swap out a header formatter.
+    pub fn header<H2>(self, header: H2) -> CrosstermRenderer<'w, W, M, H2, F> {
+        CrosstermRenderer {
+            guard: self.guard,
+            write: self.write,
+            draw_state: self.draw_state,
+            margin: self.margin,
+            header,
+            footer: self.footer,
+            max_height: self.max_height,
+        }
+    }
+}
+
+impl<'w, W, M, H, F1> CrosstermRenderer<'w, W, M, H, F1> {
+    /// Swap out a footer formatter.
+    pub fn footer<F2>(self, footer: F2) -> CrosstermRenderer<'w, W, M, H, F2> {
+        CrosstermRenderer {
+            guard: self.guard,
+            write: self.write,
+            draw_state: self.draw_state,
+            margin: self.margin,
+            header: self.header,
+            footer,
+            max_height: self.max_height,
+        }
+    }
+}
+
+impl<'w, W, M, H, F> CrosstermRenderer<'w, W, M, H, F>
+where
+    W: Write,
+    M: Margin<W>,
+    H: Header<W>,
+    F: Footer<W>,
+{
     fn calculate_draw_range(&self, data: &RenderData) -> (usize, usize) {
         if let Ok((_, rows)) = crossterm::terminal::size() {
             // Rows of the terminal.
@@ -246,59 +311,7 @@ impl<'w, W: Write, M: Margin<W>, H: Header<W>, F: Footer<W>> CrosstermRenderer<'
     }
 }
 
-// region: Swap constructors
-impl<'w, W: Write, M1, H, F> CrosstermRenderer<'w, W, M1, H, F> {
-    /// Swap out a margin formatter.
-    pub fn margin<M2>(self, margin: M2) -> CrosstermRenderer<'w, W, M2, H, F> {
-        CrosstermRenderer {
-            _guard: self._guard,
-            write: self.write,
-            draw_state: self.draw_state,
-            margin,
-            header: self.header,
-            footer: self.footer,
-            max_height: self.max_height,
-        }
-    }
-}
-
-impl<'w, W: Write, M, H1, F> CrosstermRenderer<'w, W, M, H1, F> {
-    /// Swap out a header formatter.
-    pub fn header<H2>(self, header: H2) -> CrosstermRenderer<'w, W, M, H2, F> {
-        CrosstermRenderer {
-            _guard: self._guard,
-            write: self.write,
-            draw_state: self.draw_state,
-            margin: self.margin,
-            header,
-            footer: self.footer,
-            max_height: self.max_height,
-        }
-    }
-}
-
-impl<'w, W: Write, M, H, F1> CrosstermRenderer<'w, W, M, H, F1> {
-    /// Swap out a footer formatter.
-    pub fn footer<F2>(self, footer: F2) -> CrosstermRenderer<'w, W, M, H, F2> {
-        CrosstermRenderer {
-            _guard: self._guard,
-            write: self.write,
-            draw_state: self.draw_state,
-            margin: self.margin,
-            header: self.header,
-            footer,
-            max_height: self.max_height,
-        }
-    }
-}
-
-impl<'w, W, M, H, F> CrosstermRenderer<'w, W, M, H, F> {
-    pub fn max_height(self, max_height: Option<usize>) -> Self {
-        Self { max_height, ..self }
-    }
-}
-
-pub type DefaultRenderer<'w, W> = CrosstermRenderer<'w, W, NoMargin, NoHeader, NoFooter>;
+pub type DefaultRenderer<'w, W> = CrosstermRenderer<'w, W, NoStyle, NoStyle, NoStyle>;
 
 impl Default for DefaultRenderer<'static, Stdout> {
     fn default() -> Self {

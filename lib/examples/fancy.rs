@@ -2,7 +2,7 @@ use mini_me::{
     editor::{keybindings::NormalKeybinding, Editor},
     renderer::{
         full::CrosstermRenderer,
-        styles::fancy::{FancyFooter, FancyGutter},
+        styles::fancy::{FancyFooter, FancyGutter, FancyHeader},
     },
     Result,
 };
@@ -14,6 +14,7 @@ fn main() -> Result<()> {
 
     let renderer = CrosstermRenderer::render_to(&mut lock)
         .max_height(Some(10))
+        .header(FancyHeader("Type something :)"))
         .margin(FancyGutter)
         .footer(FancyFooter);
 

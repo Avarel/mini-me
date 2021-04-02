@@ -116,6 +116,10 @@ impl<R> EditorCursor<'_, R> {
         self.editor.cursor.ln = self.editor.line_count() - 1;
     }
 
+    pub fn move_to_line_end(&mut self) {
+        self.move_to_col(self.current_line_len());
+    }
+
     pub fn delete_char(&mut self, offset: isize) {
         let z = self.cursor_rope_idx(offset);
         self.editor.buf.remove(z..z + 1);

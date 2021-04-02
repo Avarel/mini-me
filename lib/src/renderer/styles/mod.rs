@@ -11,9 +11,9 @@ pub trait Header<W> {
     fn draw(&mut self, write: &mut W, data: &RenderData) -> Result<()>;
 }
 
-pub struct NoHeader;
+pub struct NoStyle;
 
-impl<W> Header<W> for NoHeader {
+impl<W> Header<W> for NoStyle {
     fn rows(&self) -> usize {
         0
     }
@@ -46,9 +46,7 @@ impl<W: Write> Margin<W> for Box<dyn Margin<W>> {
     }
 }
 
-pub struct NoMargin;
-
-impl<W> Margin<W> for NoMargin {
+impl<W> Margin<W> for NoStyle {
     fn width(&self) -> usize {
         0
     }
@@ -72,9 +70,7 @@ impl<W: Write> Footer<W> for Box<dyn Footer<W>> {
     }
 }
 
-pub struct NoFooter;
-
-impl<W> Footer<W> for NoFooter {
+impl<W> Footer<W> for NoStyle {
     fn rows(&self) -> usize {
         0
     }
