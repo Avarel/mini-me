@@ -1,4 +1,4 @@
-use mini_me::{editor::keybindings::NormalKeybinding, editor::Editor, Result};
+use minime::{editor::keybindings::NormalKeybinding, editor::Editor, Result};
 
 // Basic bare bones example.
 //

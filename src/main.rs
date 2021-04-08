@@ -3,8 +3,10 @@ use std::{
     io::{BufReader, BufWriter, Write},
 };
 
+#[cfg(feature = "bin")]
 use clap::{App, Arg};
-use mini_me::{
+
+use minime::{
     editor::{keybindings::NormalKeybinding, Editor},
     renderer::{
         full::CrosstermRenderer,

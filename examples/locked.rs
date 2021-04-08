@@ -1,9 +1,6 @@
-use mini_me::{
+use minime::{
     editor::{keybindings::NormalKeybinding, Editor},
-    renderer::{
-        full::CrosstermRenderer,
-        styles::fancy::{FancyFooter, FancyGutter, FancyHeader},
-    },
+    renderer::full::CrosstermRenderer,
     Result,
 };
 
@@ -12,11 +9,7 @@ fn main() -> Result<()> {
     let stdout = std::io::stdout();
     let mut lock = stdout.lock();
 
-    let renderer = CrosstermRenderer::render_to(&mut lock)
-        .max_height(Some(10))
-        .header(FancyHeader("Type something :)"))
-        .margin(FancyGutter)
-        .footer(FancyFooter);
+    let renderer = CrosstermRenderer::render_to(&mut lock);
 
     // Print out some prompt using styling options.
     let term = Editor::with_renderer(renderer);

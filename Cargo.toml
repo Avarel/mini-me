@@ -1,12 +1,27 @@
 [package]
-name = "mini-me"
+name = "minime"
 version = "0.1.0"
 authors = ["Avarel <avarelpm@gmail.com>"]
-description = "A multiline console prompt for Rust."
+repository = "https://github.com/Avarel/mini-me"
+homepage = "https://github.com/Avarel/mini-me"
+description = "A multiline console prompt/editor for Rust."
 edition = "2018"
 license = "MIT"
 readme = "README.md"
 
+[lib]
+name = "minime"
+edition = "2018"
+
+[[bin]]
+name = "minime"
+doc = false
+
+[features]
+bin = ["clap"]
+
 [dependencies]
-mini_me = { path = "./lib" }
-clap = "2.33"
+clap = { version = "2.33", optional = true }
+crossterm = "0.19"
+ropey = "1.2"
+thiserror = "1.0"

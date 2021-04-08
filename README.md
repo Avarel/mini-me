@@ -1,4 +1,4 @@
-# multiline-console
+# Mini-Me
 
 ```rust
       ╭─── Input Prompt ─────────

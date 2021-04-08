@@ -1,4 +1,4 @@
-use mini_me::{
+use minime::{
     editor::{keybindings::NormalKeybinding, Editor},
     renderer::{
         full::CrosstermRenderer,
