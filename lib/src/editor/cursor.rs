@@ -26,14 +26,14 @@ impl<R> EditorCursor<'_, R> {
     }
 
     pub fn clamp(&mut self) {
-        self.editor.cursor.col = self.editor.cursor.col.min(self.current_line_len());
+        self.editor.cursor.col = self.editor.cursor.col.min(self.curr_ln_len());
     }
 
-    pub fn current_line_len(&self) -> usize {
+    pub fn curr_ln_len(&self) -> usize {
         trimmed(self.editor.buf.line(self.editor.cursor.ln)).len_chars()
     }
 
-    pub fn current_line(&self) -> Cow<str> {
+    pub fn curr_ln(&self) -> Cow<str> {
         Cow::from(trimmed(self.editor.buf.line(self.editor.cursor.ln)))
     }
 
@@ -66,7 +66,7 @@ impl<R> EditorCursor<'_, R> {
     pub fn delete(&mut self) {
         self.clamp();
 
-        if self.editor.cursor.col < self.current_line_len()
+        if self.editor.cursor.col < self.curr_ln_len()
             || self.editor.cursor.ln + 1 < self.editor.line_count()
         {
             self.delete_char(0);
@@ -75,7 +75,7 @@ impl<R> EditorCursor<'_, R> {
 
     pub fn move_right(&mut self) {
         self.clamp();
-        let len = self.current_line_len();
+        let len = self.curr_ln_len();
         if self.editor.cursor.col < len {
             self.editor.cursor.col += 1;
         } else if self.editor.cursor.ln + 1 < self.editor.line_count() {
@@ -92,13 +92,13 @@ impl<R> EditorCursor<'_, R> {
         } else if self.editor.cursor.ln > 0 {
             // Move to the end of the previous line.
             self.editor.cursor.ln -= 1;
-            self.editor.cursor.col = self.current_line_len();
+            self.editor.cursor.col = self.curr_ln_len();
         }
     }
 
     pub fn move_down(&mut self) {
         if self.editor.cursor.ln + 1 == self.editor.line_count() {
-            self.editor.cursor.col = self.current_line_len();
+            self.editor.cursor.col = self.curr_ln_len();
         } else {
             self.editor.cursor.ln += 1;
         }
@@ -117,7 +117,7 @@ impl<R> EditorCursor<'_, R> {
     }
 
     pub fn move_to_line_end(&mut self) {
-        self.move_to_col(self.current_line_len());
+        self.move_to_col(self.curr_ln_len());
     }
 
     pub fn delete_char(&mut self, offset: isize) {
@@ -139,6 +139,17 @@ impl<R> EditorCursor<'_, R> {
         } else {
             self.editor.cursor.col = self.editor.cursor.col + 1;
         }
+    }
+
+    pub(crate) fn insert_str(&mut self, str: &str) {
+        self.clamp();
+        let z = self.cursor_rope_idx(0);
+        self.editor.buf.insert(z, str);
+
+        let lines = str.lines().count().max(1);
+
+        self.editor.cursor.ln += lines - 1;
+        self.editor.cursor.col = self.editor.cursor.col + str.lines().last().unwrap_or_default().len();
     }
 
     fn cursor_rope_idx(&self, offset: isize) -> usize {

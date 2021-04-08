@@ -4,10 +4,14 @@ pub mod keybindings;
 use std::io::{Read, Stdout};
 
 use self::{cursor::EditorCursor, keybindings::Keybinding};
-use crate::{Result, renderer::{
+use crate::{
+    renderer::{
         full::{CrosstermRenderer, DefaultRenderer},
         RenderData, Renderer,
-    }, util::{Cursor, trimmed}};
+    },
+    util::{trimmed, Cursor},
+    Result,
+};
 
 use ropey::Rope;
 
@@ -40,7 +44,7 @@ impl<R: Renderer> Editor<R> {
     pub fn read(mut self, keybinding: impl Keybinding) -> Result<String> {
         loop {
             self.renderer
-                .redraw(RenderData::new(&self.buf, &self.cursor))?;
+                .draw(RenderData::new(&self.buf, &self.cursor))?;
             self.renderer.flush()?;
 
             if !keybinding.read(&mut self)? {

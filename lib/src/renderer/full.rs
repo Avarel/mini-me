@@ -11,27 +11,33 @@ use crate::{util::Cursor, Result};
 
 use crossterm::{
     cursor::*,
-    terminal::{disable_raw_mode, enable_raw_mode, Clear, ClearType},
+    terminal::{Clear, ClearType},
     QueueableCommand,
 };
 
-struct RawModeGuard();
+mod raw_mode {
+    use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
-impl RawModeGuard {
-    fn acquire() -> Result<RawModeGuard> {
-        enable_raw_mode()?;
-        Ok(Self())
+    use super::Result;
+    
+    pub struct Guard(());
+
+    impl Guard {
+        pub fn acquire() -> Result<Guard> {
+            enable_raw_mode()?;
+            Ok(Self(()))
+        }
     }
-}
 
-impl Drop for RawModeGuard {
-    fn drop(&mut self) {
-        disable_raw_mode().unwrap();
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            disable_raw_mode().unwrap();
+        }
     }
 }
 
 pub struct CrosstermRenderer<'b, W, M, H, F> {
-    guard: RawModeGuard,
+    guard: raw_mode::Guard,
     write: &'b mut W,
     margin: M,
     header: H,
@@ -62,6 +68,8 @@ where
 {
     /// Draw the prompt.
     fn draw(&mut self, data: RenderData) -> Result<()> {
+        self.move_to_frame_base()?;
+
         let (low, high) = self.calculate_draw_range(&data);
 
         if (low, high) == (0, 0) {
@@ -107,15 +115,6 @@ where
         Ok(())
     }
 
-    /// Redraw the screen.
-    fn redraw(&mut self, data: RenderData) -> Result<()> {
-        // self.write.queue(Hide)?;
-        self.move_to_frame_base()?;
-        self.draw(data)?;
-        // self.write.queue(Show)?;
-        Ok(())
-    }
-
     fn flush(&mut self) -> Result<()> {
         self.write.flush()?;
         Ok(())
@@ -130,7 +129,7 @@ where
 impl<'w, W> DefaultRenderer<'w, W> {
     pub fn render_to(write: &'w mut W) -> Self {
         CrosstermRenderer {
-            guard: RawModeGuard::acquire().unwrap(),
+            guard: raw_mode::Guard::acquire().unwrap(),
             write,
             draw_state: DrawState::default(),
             margin: NoStyle,
@@ -208,7 +207,8 @@ where
                 .max_height
                 .unwrap_or(usize::MAX)
                 .min(term_rows)
-                .saturating_sub(self.header.rows() + self.footer.rows());
+                .saturating_sub(self.header.rows())
+                .saturating_sub(self.footer.rows());
             if term_rows == 0 {
                 return (0, 0);
             }
@@ -217,17 +217,13 @@ where
             // Current line of the data.
             let line = data.cursor().ln;
             if data_rows > term_rows {
-                return if line + term_rows / 2 >= data_rows {
-                    // Anchor to the bottom.
-                    // low = data_rows - term_rows;
-                    (data_rows - term_rows, data.line_count())
-                } else if term_rows / 2 > line {
-                    // Anchor to the top.
-                    (0, term_rows)
+                return if line >= self.draw_state.high {
+                    (line - term_rows + 1, line + 1)
+                } else if line < self.draw_state.low {
+                    (line, line + term_rows)
                 } else {
-                    // Anchor so that the cursor is in the middle of the draw.
-                    (line - term_rows / 2, line + term_rows / 2 + term_rows % 2)
-                };
+                    (self.draw_state.low, self.draw_state.high.min(data_rows))
+                }
             }
         }
         (0, data.line_count())
@@ -295,6 +291,7 @@ where
         if self.footer.rows() > 0 {
             self.write.write(b"\n")?;
         }
+        // write!(self.write, "{} {} {}", self.draw_state.low, self.draw_state.high, data.cursor.ln)?;
         self.footer.draw(self.write, data)?;
         Ok(())
     }
@@ -315,9 +312,6 @@ pub type DefaultRenderer<'w, W> = CrosstermRenderer<'w, W, NoStyle, NoStyle, NoS
 
 impl Default for DefaultRenderer<'static, Stdout> {
     fn default() -> Self {
-        // Since stdout() lives for the entirety of the process.
-        // This is safe since the handle will always be valid.
-        // The only time where it may die is during shutdown.
         let out = Box::new(stdout());
         CrosstermRenderer::render_to(Box::leak(out))
     }

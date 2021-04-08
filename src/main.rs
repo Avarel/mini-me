@@ -39,7 +39,7 @@ fn main() -> Result<()> {
     let file = file_path.and_then(|path| OpenOptions::new().read(true).open(path).ok());
 
     let stderr = std::io::stderr();
-    let mut lock = stderr.lock();
+    let mut lock = BufWriter::new(stderr.lock());
 
     let renderer = CrosstermRenderer::render_to(&mut lock)
         .max_height(max_height)
@@ -67,7 +67,10 @@ fn main() -> Result<()> {
         let mut writer = BufWriter::new(file);
         writer.write_all(contents.as_bytes())?;
     } else {
-        std::io::stdout().lock().write_all(contents.as_bytes())?;
+        let stdout = std::io::stdout();
+        let mut writer = stdout.lock();
+        writer.write_all(contents.as_bytes())?;
+        writer.write(b"\n")?;
     }
 
     Ok(())
