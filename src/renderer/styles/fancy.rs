@@ -41,7 +41,7 @@ impl<W: Write> Margin<W> for FancyGutter {
 
     fn draw(&mut self, write: &mut W, line_idx: usize, data: &RenderData) -> Result<()> {
         if line_idx + 1 == data.line_count() && data.last_line().len() == 0 {
-            if line_idx == data.cursor().ln as usize {
+            if line_idx == data.focus().ln as usize {
                 write!(
                     write,
                     "{} {}",
@@ -56,7 +56,7 @@ impl<W: Write> Margin<W> for FancyGutter {
                     Self::MSG.dark_grey()
                 )?;
             }
-        } else if line_idx == data.cursor().ln as usize {
+        } else if line_idx == data.focus().ln as usize {
             write!(
                 write,
                 "{} ",
@@ -90,8 +90,8 @@ impl<W: Write> Footer<W> for FancyFooter {
             format!(" Chars: {:>3} ", data.char_count()),
             format!(
                 " Ln {}, Col {} ",
-                data.cursor().ln,
-                data.cursor().col.min(data.current_line().len())
+                data.focus().ln,
+                data.focus().col.min(data.current_line().len())
             )
         )?;
 

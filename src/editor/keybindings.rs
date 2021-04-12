@@ -26,18 +26,19 @@ impl NormalKeybinding {
         let code = event.code;
         let ln_count = editor.line_count();
         // let mut cursor = editor.cursor();
-        // let shifted = event.modifiers.contains(KeyModifiers::SHIFT);
+        let shifted = event.modifiers.contains(KeyModifiers::SHIFT);
         let alt = event.modifiers.contains(KeyModifiers::ALT);
         let control = event.modifiers.contains(KeyModifiers::CONTROL);
-        match code {
+
+        match code {  
             // KeyCode::Down if shifted => editor.move_to_bottom(),
             // KeyCode::Up if control => editor.move_to_top(),
             // KeyCode::PageDown => editor.move_to_bottom(),
             // KeyCode::PageUp => editor.move_to_top(),
-            KeyCode::Down => editor.move_down(),
-            KeyCode::Up => editor.move_up(),
-            KeyCode::Left => editor.move_left(),
-            KeyCode::Right => editor.move_right(),
+            KeyCode::Down => editor.move_down(shifted),
+            KeyCode::Up => editor.move_up(shifted),
+            KeyCode::Left => editor.move_left(shifted),
+            KeyCode::Right => editor.move_right(shifted),
 
             KeyCode::Home => {
                 let leading_spaces = editor
@@ -46,12 +47,12 @@ impl NormalKeybinding {
                     .take_while(|c| c.is_whitespace())
                     .count();
                 if editor.col() == leading_spaces {
-                    editor.move_to_col(0);
+                    editor.move_to_col(0, shifted);
                 } else {
-                    editor.move_to_col(leading_spaces);
+                    editor.move_to_col(leading_spaces, shifted);
                 }
             }
-            KeyCode::End => editor.move_to_line_end(),
+            KeyCode::End => editor.move_to_line_end(shifted),
 
             KeyCode::Backspace => editor.backspace(),
             KeyCode::Char('h') if control => editor.backspace(),
@@ -68,7 +69,7 @@ impl NormalKeybinding {
             KeyCode::BackTab => {
                 editor.clamp();
                 let col = editor.col();
-                editor.move_to_col(0);
+                editor.move_to_col(0, false);
                 let mut count = 0;
                 for _ in 0..4 {
                     if editor.curr_char() == ' ' {
@@ -78,7 +79,7 @@ impl NormalKeybinding {
                         break;
                     }
                 }
-                editor.move_to_col(col - count);
+                editor.move_to_col(col - count, false);
             }
             KeyCode::Esc => return Ok(false),
             KeyCode::Enter => {

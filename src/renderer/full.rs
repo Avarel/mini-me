@@ -206,7 +206,7 @@ where
             // Rows of the data to draw.
             let data_rows = data.line_count();
             // Current line of the data.
-            let line = data.cursor().ln;
+            let line = data.focus().ln;
             if data_rows > term_rows {
                 let (low, high) = if line >= self.draw_state.high {
                     (line - term_rows + 1, line + 1)
@@ -233,7 +233,7 @@ where
     // (assuming no other cursor adjustments made).
     fn draw_cursor(&mut self, data: &RenderData) -> Result<()> {
         // Move to the correct row.
-        let line = data.cursor().ln;
+        let line = data.focus().ln;
         let frame_height = self.draw_state.height;
         let relative_ln = line - self.draw_state.low;
         let up_offset = frame_height - 1 - self.draw_state.anchor.ln - relative_ln;
@@ -241,7 +241,7 @@ where
         self.write.queue(MoveUp(Self::usize_to_u16(up_offset)))?;
 
         // Move to the correct column.
-        let col = data.cursor().col.min(data.current_line().len());
+        let col = data.focus().col.min(data.current_line().len());
         let n = self.draw_state.anchor.col + col + 1;
         self.write.queue(MoveToColumn(Self::usize_to_u16(n)))?;
 

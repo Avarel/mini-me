@@ -18,16 +18,9 @@ use crate::{
 
 use ropey::Rope;
 
-pub enum Selection {
-    Focus(Cursor),
-    Range {
-        focus: Cursor,
-        anchor: Cursor
-    }
-}
-
 pub struct Editor<R> {
-    cursor: Cursor,
+    focus: Cursor,
+    anchor: Option<Cursor>,
     buf: Rope,
     renderer: R,
 }
@@ -42,7 +35,8 @@ impl<R: Renderer> Editor<R> {
     pub fn with_renderer(renderer: R) -> Self {
         Editor {
             buf: Rope::new(),
-            cursor: Cursor::default(),
+            focus: Cursor::default(),
+            anchor: None,
             renderer,
         }
     }
@@ -55,7 +49,7 @@ impl<R: Renderer> Editor<R> {
     pub fn read(mut self, keybinding: impl Keybinding) -> Result<String> {
         loop {
             self.renderer
-                .draw(RenderData::new(&self.buf, &self.cursor))?;
+                .draw(RenderData::new(&self.buf, self.focus, self.anchor))?;
             self.renderer.flush()?;
 
             if !keybinding.read(&mut self)? {
@@ -93,150 +87,200 @@ impl<R> Editor<R> {
     //     self.buf.insert(line_end, &string)
     // }
 
+    // Unanchor if the focus is where the anchor is.
+    fn fix_anchor(&mut self) {
+        if self.anchor == Some(self.focus) {
+            self.anchor = None;
+        }
+    }
+
+    // Anchor if there was not already an anchor, or unanchor.
+    fn anchor(&mut self, anchored: bool) {
+        if anchored {
+            if self.anchor == None {
+                self.anchor = Some(self.focus);
+            }
+        } else {
+            self.anchor = None
+        }
+    }
+
     pub fn ln_mut(&mut self) -> &mut usize {
-        &mut self.cursor.ln
+        &mut self.focus.ln
     }
 
     pub fn col_mut(&mut self) -> &mut usize {
-        &mut self.cursor.col
+        &mut self.focus.col
     }
 
     pub fn ln(&self) -> usize {
-        self.cursor.ln
+        self.focus.ln
     }
 
     pub fn col(&self) -> usize {
-        self.cursor.col
+        self.focus.col
     }
 
     pub fn clamp(&mut self) {
-        self.cursor.col = self.cursor.col.min(self.curr_ln_len());
+        self.focus.col = self.focus.col.min(self.curr_ln_len());
     }
 
     pub fn curr_ln_len(&self) -> usize {
-        trimmed(self.buf.line(self.cursor.ln)).len_chars()
+        trimmed(self.buf.line(self.focus.ln)).len_chars()
     }
 
     pub fn curr_ln(&self) -> Cow<str> {
-        Cow::from(trimmed(self.buf.line(self.cursor.ln)))
+        Cow::from(trimmed(self.buf.line(self.focus.ln)))
     }
 
     pub fn curr_char(&self) -> char {
-        self.buf.char(self.cursor_rope_idx(0))
+        self.buf.char(self.rope_idx(self.focus, 0))
     }
 
-    pub fn move_up(&mut self) {
-        if self.cursor.ln == 0 {
-            self.cursor.col = 0;
+    fn delete_range(&mut self, focus: Cursor, anchor: Cursor) {
+        let anchor_idx = self.rope_idx(anchor, 0);
+        let focus_idx = self.rope_idx(focus, 0);
+        if focus_idx < anchor_idx {
+            self.buf.remove(focus_idx..anchor_idx)
         } else {
-            self.cursor.ln -= 1;
+            self.focus = self.anchor.unwrap();
+            self.buf.remove(anchor_idx..focus_idx)
         }
+        self.anchor = None;
     }
 
     pub fn backspace(&mut self) {
         self.clamp();
 
-        if self.cursor.col > 0 {
+        if let Some(anchor) = self.anchor {
+            self.delete_range(self.focus, anchor);
+        } else if self.focus.col > 0 {
             self.delete_char(-1);
-            self.cursor.col -= 1;
-        } else if self.cursor.ln > 0 {
-            let col = self.buf.line(self.cursor.ln - 1).len_chars();
+            self.focus.col -= 1;
+        } else if self.focus.ln > 0 {
+            let col = self.buf.line(self.focus.ln - 1).len_chars();
             self.delete_char(-1);
-            self.cursor.ln -= 1;
-            self.cursor.col = col - 1;
+            self.focus.ln -= 1;
+            self.focus.col = col - 1;
         }
     }
 
     pub fn delete(&mut self) {
         self.clamp();
 
-        if self.cursor.col < self.curr_ln_len() || self.cursor.ln + 1 < self.line_count() {
+        if let Some(anchor) = self.anchor {
+            self.delete_range(self.focus, anchor);
+        } else if self.focus.col < self.curr_ln_len() || self.focus.ln + 1 < self.line_count() {
             self.delete_char(0);
         }
     }
 
-    pub fn move_right(&mut self) {
+    pub fn move_right(&mut self, anchored: bool) {
         self.clamp();
+        self.anchor(anchored);
         let len = self.curr_ln_len();
-        if self.cursor.col < len {
-            self.cursor.col += 1;
-        } else if self.cursor.ln + 1 < self.line_count() {
+        if self.focus.col < len {
+            self.focus.col += 1;
+        } else if self.focus.ln + 1 < self.line_count() {
             // Move to the beginning of the next line.
-            self.cursor.ln += 1;
-            self.cursor.col = 0;
+            self.focus.ln += 1;
+            self.focus.col = 0;
         }
+        self.fix_anchor();
     }
 
-    pub fn move_left(&mut self) {
+    pub fn move_left(&mut self, anchored: bool) {
         self.clamp();
-        if self.cursor.col > 0 {
-            self.cursor.col -= 1;
-        } else if self.cursor.ln > 0 {
+        self.anchor(anchored);
+        if self.focus.col > 0 {
+            self.focus.col -= 1;
+        } else if self.focus.ln > 0 {
             // Move to the end of the previous line.
-            self.cursor.ln -= 1;
-            self.cursor.col = self.curr_ln_len();
+            self.focus.ln -= 1;
+            self.focus.col = self.curr_ln_len();
         }
+        self.fix_anchor();
     }
 
-    pub fn move_down(&mut self) {
-        if self.cursor.ln + 1 == self.line_count() {
-            self.cursor.col = self.curr_ln_len();
+    pub fn move_up(&mut self, anchored: bool) {
+        self.anchor(anchored);
+        if self.focus.ln == 0 {
+            self.focus.col = 0;
         } else {
-            self.cursor.ln += 1;
+            self.focus.ln -= 1;
         }
+        self.fix_anchor();
     }
 
-    pub fn move_to_col(&mut self, col: usize) {
-        self.cursor.col = col;
+    pub fn move_down(&mut self, anchored: bool) {
+        self.anchor(anchored);
+        if self.focus.ln + 1 == self.line_count() {
+            self.focus.col = self.curr_ln_len();
+        } else {
+            self.focus.ln += 1;
+        }
+        self.fix_anchor();
+    }
+
+    pub fn move_to_col(&mut self, col: usize, anchored: bool) {
+        self.anchor(anchored);
+        self.focus.col = col;
+        self.fix_anchor();
     }
 
     pub fn move_to_top(&mut self) {
-        self.cursor.ln = 0;
+        self.focus.ln = 0;
     }
 
     pub fn move_to_bottom(&mut self) {
-        self.cursor.ln = self.line_count() - 1;
+        self.focus.ln = self.line_count() - 1;
     }
 
-    pub fn move_to_line_end(&mut self) {
-        self.move_to_col(self.curr_ln_len());
+    pub fn move_to_line_end(&mut self, anchored: bool) {
+        self.move_to_col(self.curr_ln_len(), anchored);
     }
 
     pub fn delete_char(&mut self, offset: isize) {
-        let z = self.cursor_rope_idx(offset);
-        self.buf.remove(z..z + 1);
+        let z = self.rope_idx(self.focus, offset);
+        self.buf.remove(z..=z);
     }
 
     pub fn insert_char(&mut self, offset: isize, c: char) {
-        let z = self.cursor_rope_idx(offset);
+        let z = self.rope_idx(self.focus, offset);
         self.buf.insert_char(z, c);
     }
 
     pub fn type_char(&mut self, c: char) {
         self.clamp();
+        if let Some(anchor) = self.anchor {
+            self.delete_range(self.focus, anchor);
+        }
         self.insert_char(0, c);
         if c == '\n' {
-            self.cursor.col = 0;
-            self.cursor.ln += 1;
+            self.focus.col = 0;
+            self.focus.ln += 1;
         } else {
-            self.cursor.col = self.cursor.col + 1;
+            self.focus.col = self.focus.col + 1;
         }
     }
 
     pub(crate) fn insert_str(&mut self, str: &str) {
         self.clamp();
-        let z = self.cursor_rope_idx(0);
+        if let Some(anchor) = self.anchor {
+            self.delete_range(self.focus, anchor);
+        }
+        let z = self.rope_idx(self.focus, 0);
         self.buf.insert(z, str);
 
         let lines = str.lines().count().max(1);
 
-        self.cursor.ln += lines - 1;
-        self.cursor.col = self.cursor.col + str.lines().last().unwrap_or_default().len();
+        self.focus.ln += lines - 1;
+        self.focus.col = self.focus.col + str.lines().last().unwrap_or_default().len();
     }
 
-    fn cursor_rope_idx(&self, offset: isize) -> usize {
-        let idx = self.cursor.col;
-        let line_start = self.buf.line_to_char(self.cursor.ln);
+    fn rope_idx(&self, cursor: Cursor, offset: isize) -> usize {
+        let idx = cursor.col;
+        let line_start = self.buf.line_to_char(cursor.ln);
         let z = line_start + idx;
         // Take good care to not underflow subtract.
         // Also I'm keeping this and assuming that

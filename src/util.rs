@@ -1,6 +1,6 @@
 use ropey::RopeSlice;
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Cursor {
     pub ln: usize,
     pub col: usize,

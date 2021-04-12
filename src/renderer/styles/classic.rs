@@ -43,7 +43,7 @@ impl<W: Write> Margin<W> for ClassicGutter {
         write!(write, "{:>width$}", line_idx + 1, width = 5)?;
 
         write.write(
-            if line_idx == data.cursor().ln {
+            if line_idx == data.focus().ln {
                 Self::DELIM_BOLD
             } else {
                 Self::DELIM
@@ -68,8 +68,8 @@ impl<W: Write> Footer<W> for ClassicFooter {
             "      ╰─── Lines: {} ─── Chars: {} ─── Ln: {}, Col: {}",
             data.line_count(),
             data.char_count(),
-            data.cursor().ln,
-            data.cursor().col.min(data.current_line().len())
+            data.focus().ln,
+            data.focus().col.min(data.current_line().len())
         )?;
         w.queue(Clear(ClearType::UntilNewLine))?;
         Ok(())

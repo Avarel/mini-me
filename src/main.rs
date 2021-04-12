@@ -53,7 +53,7 @@ fn main() -> Result<()> {
     if let Some(file) = file {
         term.set_contents(BufReader::new(file))?;
         term.move_to_bottom();
-        term.move_to_line_end();
+        term.move_to_line_end(false);
     }
 
     let contents = term.read(NormalKeybinding)?;
