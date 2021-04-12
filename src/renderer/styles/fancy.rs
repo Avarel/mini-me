@@ -7,7 +7,9 @@ use crossterm::{
 };
 use std::io::Write;
 
-pub struct FancyHeader<'s>(pub &'s str);
+pub struct FancyHeader<'s> {
+    pub message: &'s str
+}
 
 impl<W: Write> Header<W> for FancyHeader<'_> {
     fn rows(&self) -> usize {
@@ -19,7 +21,7 @@ impl<W: Write> Header<W> for FancyHeader<'_> {
             w,
             "{} {}",
             "       ".black().on_dark_grey(),
-            self.0
+            self.message
         )?;
         w.queue(Clear(ClearType::UntilNewLine))?;
         Ok(())

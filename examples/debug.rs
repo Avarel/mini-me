@@ -1,5 +1,5 @@
 use minime::{
-    editor::{keybindings::NormalKeybinding, Editor},
+    editor::{keybindings::DebugKeybinding, Editor},
     renderer::{
         full::CrosstermRenderer,
         styles::fancy::{FancyFooter, FancyGutter, FancyHeader},
@@ -15,13 +15,13 @@ fn main() -> Result<()> {
     let renderer = CrosstermRenderer::render_to(&mut lock)
         .max_height(Some(10))
         .header(FancyHeader {
-            message: "Type something :)",
+            message: "Debug keybindings for keybinding development",
         })
         .margin(FancyGutter)
         .footer(FancyFooter);
 
     // Print out some prompt using styling options.
     let term = Editor::with_renderer(renderer);
-    dbg!(term.read(NormalKeybinding)?);
+    dbg!(term.read(DebugKeybinding)?);
     Ok(())
 }

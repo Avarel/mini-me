@@ -2,10 +2,13 @@ use crate::{editor::Editor, renderer::Renderer, Result};
 
 use crossterm::event::{read, Event, KeyCode, KeyEvent, KeyModifiers};
 
+/// Generic keybinding trait.
 pub trait Keybinding {
+    /// Read a key from the environment and act upon the editor.
     fn read(&self, editor: &mut Editor<impl Renderer>) -> Result<bool>;
 }
 
+/// Default keybindings for the editor.
 pub struct NormalKeybinding;
 
 impl Keybinding for NormalKeybinding {
@@ -22,74 +25,77 @@ impl NormalKeybinding {
     fn process_key_event(editor: &mut Editor<impl Renderer>, event: KeyEvent) -> Result<bool> {
         let code = event.code;
         let ln_count = editor.line_count();
-        let mut cursor = editor.cursor();
+        // let mut cursor = editor.cursor();
         // let shifted = event.modifiers.contains(KeyModifiers::SHIFT);
         let alt = event.modifiers.contains(KeyModifiers::ALT);
         let control = event.modifiers.contains(KeyModifiers::CONTROL);
         match code {
-            // KeyCode::Down if shifted => cursor.move_to_bottom(),
-            // KeyCode::Up if control => cursor.move_to_top(),
-            // KeyCode::PageDown => cursor.move_to_bottom(),
-            // KeyCode::PageUp => cursor.move_to_top(),
+            // KeyCode::Down if shifted => editor.move_to_bottom(),
+            // KeyCode::Up if control => editor.move_to_top(),
+            // KeyCode::PageDown => editor.move_to_bottom(),
+            // KeyCode::PageUp => editor.move_to_top(),
+            KeyCode::Down => editor.move_down(),
+            KeyCode::Up => editor.move_up(),
+            KeyCode::Left => editor.move_left(),
+            KeyCode::Right => editor.move_right(),
 
-            KeyCode::Down => cursor.move_down(),
-            KeyCode::Up => cursor.move_up(),
-            KeyCode::Left => cursor.move_left(),
-            KeyCode::Right => cursor.move_right(),
-            
             KeyCode::Home => {
-                let leading_spaces = cursor
+                let leading_spaces = editor
                     .curr_ln()
                     .chars()
                     .take_while(|c| c.is_whitespace())
                     .count();
-                if cursor.col() == leading_spaces {
-                    cursor.move_to_col(0);
+                if editor.col() == leading_spaces {
+                    editor.move_to_col(0);
                 } else {
-                    cursor.move_to_col(leading_spaces);
+                    editor.move_to_col(leading_spaces);
                 }
             }
-            KeyCode::End => cursor.move_to_line_end(),
+            KeyCode::End => editor.move_to_line_end(),
 
-            KeyCode::Backspace => cursor.backspace(),
-            KeyCode::Char('h') if control => cursor.backspace(),
-            KeyCode::Delete => cursor.delete(),
+            KeyCode::Backspace => editor.backspace(),
+            KeyCode::Char('h') if control => editor.backspace(),
+            KeyCode::Delete => editor.delete(),
 
             KeyCode::Tab => {
-                cursor.clamp();
-                let soft = 4 - cursor.col() % 4;
+                editor.clamp();
+                let soft = 4 - editor.col() % 4;
                 for _ in 0..soft {
-                    cursor.insert_char(0, ' ');
+                    editor.insert_char(0, ' ');
                 }
-                *cursor.col_mut() += soft;
+                *editor.col_mut() += soft;
             }
             KeyCode::BackTab => {
-                cursor.clamp();
-                let col = cursor.col();
-                cursor.move_to_col(0);
+                editor.clamp();
+                let col = editor.col();
+                editor.move_to_col(0);
                 let mut count = 0;
                 for _ in 0..4 {
-                    if cursor.curr_char() == ' ' {
-                        cursor.delete();
+                    if editor.curr_char() == ' ' {
+                        editor.delete();
                         count += 1;
                     } else {
                         break;
                     }
                 }
-                cursor.move_to_col(col - count);
+                editor.move_to_col(col - count);
             }
             KeyCode::Esc => return Ok(false),
-            KeyCode::Enter if !alt && cursor.curr_ln_len() == 0 && cursor.ln() + 1 == ln_count => {
-                return Ok(false)
+            KeyCode::Enter => {
+                if !alt && editor.curr_ln_len() == 0 && editor.ln() + 1 == ln_count {
+                    return Ok(false);
+                } else {
+                    editor.type_char('\n');
+                }
             }
-            KeyCode::Enter => cursor.type_char('\n'),
-            KeyCode::Char(c) => cursor.type_char(c),
-            _ => { /* ignored */ },
+            KeyCode::Char(c) => editor.type_char(c),
+            _ => { /* ignored */ }
         }
         Ok(true)
     }
 }
 
+#[doc(hidden)]
 pub struct DebugKeybinding;
 
 impl Keybinding for DebugKeybinding {
@@ -105,10 +111,9 @@ impl Keybinding for DebugKeybinding {
 impl DebugKeybinding {
     fn process_key_event(editor: &mut Editor<impl Renderer>, event: KeyEvent) -> Result<bool> {
         let code = event.code;
-        let mut cursor = editor.cursor();
         match code {
             KeyCode::Esc => return Ok(false),
-            _ => cursor.insert_str(&format!("{:#?}", event)),
+            _ => editor.insert_str(&format!("{:#?}", event)),
         }
         Ok(true)
     }

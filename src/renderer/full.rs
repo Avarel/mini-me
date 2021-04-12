@@ -19,7 +19,7 @@ mod raw_mode {
     use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
     use super::Result;
-    
+
     pub struct Guard(());
 
     impl Guard {
@@ -78,17 +78,9 @@ where
 
         self.draw_state = DrawState::default();
 
-        // self.draw_header(|w| write!(w, "      ╭─── Input Prompt ─────────"))?;
         self.draw_header(&data)?;
 
-        // Print out the contents.
-        for i in low..high {
-            self.draw_line(&data, i)?;
-            if i < high - 1 {
-                // The last line should not have any new-line attached to it.
-                self.write.write(b"\n")?;
-            }
-        }
+        self.draw_range(&data, low, high)?;
 
         self.draw_state.anchor.col = self.margin.width();
         self.draw_state.low = low;
@@ -202,11 +194,10 @@ where
     fn calculate_draw_range(&self, data: &RenderData) -> (usize, usize) {
         if let Ok((_, rows)) = crossterm::terminal::size() {
             // Rows of the terminal.
-            let term_rows: usize = rows.try_into().unwrap();
             let term_rows = self
                 .max_height
                 .unwrap_or(usize::MAX)
-                .min(term_rows)
+                .min(rows.try_into().unwrap())
                 .saturating_sub(self.header.rows())
                 .saturating_sub(self.footer.rows());
             if term_rows == 0 {
@@ -217,13 +208,14 @@ where
             // Current line of the data.
             let line = data.cursor().ln;
             if data_rows > term_rows {
-                return if line >= self.draw_state.high {
+                let (low, high) = if line >= self.draw_state.high {
                     (line - term_rows + 1, line + 1)
                 } else if line < self.draw_state.low {
                     (line, line + term_rows)
                 } else {
-                    (self.draw_state.low, self.draw_state.high.min(data_rows))
-                }
+                    (self.draw_state.low, self.draw_state.high)
+                };
+                return (low, high.min(data_rows));
             }
         }
         (0, data.line_count())
@@ -277,7 +269,6 @@ where
         self.cursor_to_left_term_edge()?;
 
         self.margin.draw(self.write, line, data)?;
-
         data.write_line(line, self.write)?;
 
         self.write.queue(Clear(ClearType::UntilNewLine))?;
@@ -296,8 +287,19 @@ where
         Ok(())
     }
 
+    fn draw_range(&mut self, data: &RenderData, low: usize, high: usize) -> Result<()> {
+        // Print out the contents.
+        for i in low..high {
+            self.draw_line(&data, i)?;
+            if i < high - 1 {
+                // The last line should not have any new-line attached to it.
+                self.write.write(b"\n")?;
+            }
+        }
+        Ok(())
+    }
+
     /// Move the curser to the terminal left margin.
-    #[doc(hidden)]
     fn cursor_to_left_term_edge(&mut self) -> Result<()> {
         self.write.queue(MoveToColumn(0))?;
         Ok(())

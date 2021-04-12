@@ -1,7 +1,7 @@
 # Mini-Me
-An embeddable customizable multiline text-editor based on `crossterm`.
+An embeddable, customizable, inline text-editor based on `crossterm`.
 ```rust
-      ╭─── Input Prompt ─────────
+      ╭─── Input Prompt
     1 │ hello there
     2 │ this is a simple prompt
     3 │ thats multiline and decent enough

@@ -7,7 +7,9 @@ use crossterm::{
     QueueableCommand,
 };
 
-pub struct ClassicHeader<'s>(pub &'s str);
+pub struct ClassicHeader<'s> {
+    pub message: &'s str
+}
 
 impl<W: Write> Header<W> for ClassicHeader<'_> {
     fn rows(&self) -> usize {
@@ -15,8 +17,8 @@ impl<W: Write> Header<W> for ClassicHeader<'_> {
     }
 
     fn draw(&mut self, w: &mut W, _: &RenderData) -> Result<()> {
-        w.write("      ╭──┤ ".as_bytes())?;
-        w.write(self.0.as_bytes())?;
+        w.write("      ╭─── ".as_bytes())?;
+        w.write(self.message.as_bytes())?;
         w.queue(Clear(ClearType::UntilNewLine))?;
         Ok(())
     }
@@ -63,7 +65,7 @@ impl<W: Write> Footer<W> for ClassicFooter {
     fn draw(&mut self, w: &mut W, data: &RenderData) -> Result<()> {
         write!(
             w,
-            "      ╰──┤ Lines: {} ├─┤ Chars: {} ├─┤ Ln: {}, Col: {}",
+            "      ╰─── Lines: {} ─── Chars: {} ─── Ln: {}, Col: {}",
             data.line_count(),
             data.char_count(),
             data.cursor().ln,
