@@ -23,8 +23,9 @@ fn main() -> Result<()> {
         .author("Avarel <avarelpm@gmail.com>")
         .about("Miniaturized text editor")
         .arg(
-            Arg::with_name("height")
-                .long("height")
+            Arg::with_name("HEIGHT")
+                .long("size")
+                .short("s")
                 .value_name("INTEGER")
                 .help("Sets the window height of the editor")
                 .takes_value(true),
@@ -34,11 +35,33 @@ fn main() -> Result<()> {
                 .help("Sets the input file to use")
                 .takes_value(true),
         )
+        .arg(
+            Arg::with_name("NOSAVE")
+                .long("nosave")
+                .short("ns")
+                .conflicts_with("OUTPUT"),
+        )
+        .arg(
+            Arg::with_name("OUTPUT")
+                .short("o")
+                .long("output")
+                .help("Sets the file to save to")
+                .default_value("FILE")
+                .takes_value(true),
+        )
         .get_matches();
 
-    let max_height = matches.value_of("height").and_then(|s| s.parse().ok());
+    let max_height = matches.value_of("HEIGHT").and_then(|s| s.parse().ok());
 
     let file_path = matches.value_of("FILE");
+
+    let no_save = matches.is_present("NOSAVE");
+
+    let output_path = if no_save {
+        None
+    } else {
+        matches.value_of("OUTPUT").or(file_path)
+    };
 
     let file = file_path.and_then(|path| OpenOptions::new().read(true).open(path).ok());
 
@@ -60,7 +83,7 @@ fn main() -> Result<()> {
 
     let contents = term.read(NormalKeybinding)?;
 
-    if let Some(file) = file_path.and_then(|path| {
+    if let Some(file) = output_path.and_then(|path| {
         OpenOptions::new()
             .create(true)
             .write(true)

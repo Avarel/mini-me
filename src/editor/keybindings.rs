@@ -31,15 +31,13 @@ impl NormalKeybinding {
         let control = event.modifiers.contains(KeyModifiers::CONTROL);
 
         match code {
-            // KeyCode::Down if shifted => editor.move_to_bottom(),
-            // KeyCode::Up if control => editor.move_to_top(),
-            // KeyCode::PageDown => editor.move_to_bottom(),
-            // KeyCode::PageUp => editor.move_to_top(),
             KeyCode::Down => editor.move_down(shifted),
             KeyCode::Up => editor.move_up(shifted),
             KeyCode::Left => editor.move_left(shifted),
             KeyCode::Right => editor.move_right(shifted),
 
+            KeyCode::PageDown => editor.move_to_bottom(),
+            KeyCode::PageUp => editor.move_to_top(),
             KeyCode::Home => {
                 let leading_spaces = editor
                     .curr_ln_chars()
