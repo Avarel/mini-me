@@ -12,6 +12,9 @@ An embeddable, customizable, inline text-editor based on `crossterm`.
 ## Features
 * Simple, intuitive, and embeddable.
 * Customize header, footer, and or margin gutters.
+    * Preset styles are unstable.
+* Range selection.
+* (Unstable) Clipboard support.
 
 ## Binary Installation
 `minime` can be used as a CLI. The best way to install it is using:
@@ -23,7 +26,9 @@ The binary can be used by invoking `minime -h`.
 ## Default Controls
 * Arrow keys work as expected.
 * Home, end, delete, Tab and backtab mirrors VSCode behavior.
+* Shift-arrow keys create a selection range.
 * `Esc` or `Enter` on the last empty line to close and submit the prompt.
+* Control-X/C/V clipboard support is unstable.
 
 ## Usage
 

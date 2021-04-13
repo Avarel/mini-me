@@ -30,7 +30,7 @@ impl NormalKeybinding {
         let alt = event.modifiers.contains(KeyModifiers::ALT);
         let control = event.modifiers.contains(KeyModifiers::CONTROL);
 
-        match code {  
+        match code {
             // KeyCode::Down if shifted => editor.move_to_bottom(),
             // KeyCode::Up if control => editor.move_to_top(),
             // KeyCode::PageDown => editor.move_to_bottom(),
@@ -42,11 +42,10 @@ impl NormalKeybinding {
 
             KeyCode::Home => {
                 let leading_spaces = editor
-                    .curr_ln()
-                    .chars()
+                    .curr_ln_chars()
                     .take_while(|c| c.is_whitespace())
                     .count();
-                if editor.col() == leading_spaces {
+                if editor.focus.col == leading_spaces {
                     editor.move_to_col(0, shifted);
                 } else {
                     editor.move_to_col(leading_spaces, shifted);
@@ -58,32 +57,58 @@ impl NormalKeybinding {
             KeyCode::Char('h') if control => editor.backspace(),
             KeyCode::Delete => editor.delete(),
 
+            #[cfg(feature = "unstable")]
+            KeyCode::Char('c') if control => {
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    if let Some(txt) = editor.curr_sel() {
+                        clipboard.set_text(txt.to_string()).unwrap();
+                    } else {
+                        clipboard.set_text(editor.curr_ln().to_string()).unwrap();
+                    }
+                }
+            }
+            #[cfg(feature = "unstable")]
+            KeyCode::Char('x') if control => {
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    if let Some(txt) = editor.curr_sel() {
+                        clipboard.set_text(txt.to_string()).unwrap();
+                        editor.delete();
+                    } else {
+                        clipboard.set_text(editor.remove_line(editor.focus.ln)).unwrap();
+                    }
+                }
+            }
+            #[cfg(feature = "unstable")]
+            KeyCode::Char('v') if control => {
+                if let Ok(mut clipboard) = arboard::Clipboard::new() {
+                    if let Ok(txt) = clipboard.get_text() {
+                        editor.insert_str(&txt);
+                    }
+                }
+            }
+            
             KeyCode::Tab => {
                 editor.clamp();
-                let soft = 4 - editor.col() % 4;
+                let soft = 4 - editor.focus.col % 4;
                 for _ in 0..soft {
                     editor.insert_char(0, ' ');
                 }
-                *editor.col_mut() += soft;
+                editor.focus.col += soft;
             }
             KeyCode::BackTab => {
                 editor.clamp();
-                let col = editor.col();
-                editor.move_to_col(0, false);
-                let mut count = 0;
-                for _ in 0..4 {
-                    if editor.curr_char() == ' ' {
-                        editor.delete();
-                        count += 1;
-                    } else {
-                        break;
-                    }
-                }
-                editor.move_to_col(col - count, false);
+
+                let leading_spaces = editor
+                    .curr_ln_chars()
+                    .take(4)
+                    .take_while(|c| c.is_whitespace())
+                    .count();
+
+                editor.delete_ln_range(0, leading_spaces);
             }
             KeyCode::Esc => return Ok(false),
             KeyCode::Enter => {
-                if !alt && editor.curr_ln_len() == 0 && editor.ln() + 1 == ln_count {
+                if !alt && editor.curr_ln_len() == 0 && editor.focus.ln + 1 == ln_count {
                     return Ok(false);
                 } else {
                     editor.type_char('\n');

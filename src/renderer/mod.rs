@@ -5,7 +5,10 @@ use std::{
 
 use crate::util::{trimmed, Cursor};
 
+/// Full renderer.
 pub mod full;
+
+/// Preset styles.
 pub mod styles;
 
 use crate::Result;
