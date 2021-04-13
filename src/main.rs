@@ -15,9 +15,11 @@ use minime::{
     Result,
 };
 
+const CARGO_PKG_VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
 fn main() -> Result<()> {
     let matches = App::new("Mini-Me")
-        .version("0.1")
+        .version(CARGO_PKG_VERSION)
         .author("Avarel <avarelpm@gmail.com>")
         .about("Miniaturized text editor")
         .arg(
