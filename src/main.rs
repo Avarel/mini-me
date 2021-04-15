@@ -37,9 +37,17 @@ fn main() -> Result<()> {
         )
         .arg(
             Arg::with_name("NOSAVE")
-                .long("nosave")
+                .help("Do not save the editor content to any location")
+                .long("no-save")
                 .short("ns")
                 .conflicts_with("OUTPUT"),
+        )
+        .arg(
+            Arg::with_name("NOEMIT")
+                .help("Do not emit the editor content if a file is not specified")
+                .long("no-emit")
+                .short("ne")
+                .conflicts_with("OUTPUT")
         )
         .arg(
             Arg::with_name("OUTPUT")
@@ -52,10 +60,9 @@ fn main() -> Result<()> {
         .get_matches();
 
     let max_height = matches.value_of("HEIGHT").and_then(|s| s.parse().ok());
-
     let file_path = matches.value_of("FILE");
-
     let no_save = matches.is_present("NOSAVE");
+    let no_emit = matches.is_present("NOEMIT");
 
     let output_path = if no_save {
         None
@@ -93,7 +100,7 @@ fn main() -> Result<()> {
     }) {
         let mut writer = BufWriter::new(file);
         writer.write_all(contents.as_bytes())?;
-    } else {
+    } else if !no_emit {
         let stdout = std::io::stdout();
         let mut writer = stdout.lock();
         writer.write_all(contents.as_bytes())?;
