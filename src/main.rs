@@ -80,7 +80,7 @@ fn main() -> Result<()> {
         .margin(FancyGutter)
         .footer(FancyFooter);
 
-    let mut term = Editor::with_renderer(renderer);
+    let mut term = Editor::default();
 
     if let Some(file) = file {
         term.set_contents(BufReader::new(file))?;
@@ -88,7 +88,9 @@ fn main() -> Result<()> {
         term.move_to_line_end(false);
     }
 
-    let contents = term.read(NormalKeybinding)?;
+    term.read(NormalKeybinding, renderer)?;
+
+    let contents = term.contents();
 
     if let Some(file) = output_path.and_then(|path| {
         OpenOptions::new()

@@ -1,4 +1,4 @@
-use minime::{editor::keybindings::NormalKeybinding, editor::Editor, Result};
+use minime::{editor::keybindings::NormalKeybinding, editor::Editor, Result, renderer::full::DefaultRenderer};
 
 // Basic bare bones example.
 //
@@ -14,8 +14,8 @@ use minime::{editor::keybindings::NormalKeybinding, editor::Editor, Result};
 fn main() -> Result<()> {
     println!("Write something cool!");
     // Build the prompt.
-    let term = Editor::default();
-
-    dbg!(term.read(NormalKeybinding))?;
+    let mut term = Editor::default();
+    term.read(NormalKeybinding, DefaultRenderer::default())?;
+    dbg!(term.contents());
     Ok(())
 }

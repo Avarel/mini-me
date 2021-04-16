@@ -1,7 +1,7 @@
 use std::io::Write;
 
 use super::{Footer, Header, Margin};
-use crate::{renderer::RenderData, Result};
+use crate::{renderer::Editor, Result};
 use crossterm::{
     terminal::{Clear, ClearType},
     QueueableCommand,
@@ -16,7 +16,7 @@ impl<W: Write> Header<W> for ClassicHeader<'_> {
         1
     }
 
-    fn draw(&mut self, w: &mut W, _: &RenderData) -> Result<()> {
+    fn draw(&mut self, w: &mut W, _: &Editor) -> Result<()> {
         w.write("      ╭─── ".as_bytes())?;
         w.write(self.message.as_bytes())?;
         w.queue(Clear(ClearType::UntilNewLine))?;
@@ -39,11 +39,11 @@ impl<W: Write> Margin<W> for ClassicGutter {
         Self::WIDTH + Self::PAD
     }
 
-    fn draw(&mut self, write: &mut W, line_idx: usize, data: &RenderData) -> Result<()> {
+    fn draw(&mut self, write: &mut W, line_idx: usize, data: &Editor) -> Result<()> {
         write!(write, "{:>width$}", line_idx + 1, width = 5)?;
 
         write.write(
-            if line_idx == data.focus().ln {
+            if line_idx == data.selection.focus.ln {
                 Self::DELIM_BOLD
             } else {
                 Self::DELIM
@@ -62,14 +62,14 @@ impl<W: Write> Footer<W> for ClassicFooter {
         1
     }
 
-    fn draw(&mut self, w: &mut W, data: &RenderData) -> Result<()> {
+    fn draw(&mut self, w: &mut W, data: &Editor) -> Result<()> {
         write!(
             w,
             "      ╰─── Lines: {} ─── Chars: {} ─── Ln: {}, Col: {}",
             data.line_count(),
             data.char_count(),
-            data.focus().ln,
-            data.focus().col.min(data.current_line().len())
+            data.selection.focus.ln,
+            data.selection.focus.col.min(data.curr_ln_len())
         )?;
         w.queue(Clear(ClearType::UntilNewLine))?;
         Ok(())

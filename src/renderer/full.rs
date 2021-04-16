@@ -5,31 +5,32 @@ use std::{
 
 use super::{
     styles::{Footer, Header, Margin, NoStyle},
-    RenderData, Renderer,
+    Editor, Renderer,
 };
-use crate::{util::Cursor, Result};
+use crate::{editor::selection::Cursor, Result};
 
 use crossterm::{
     cursor::*,
-    terminal::{Clear, ClearType},
+    terminal::{Clear, ClearType, EnterAlternateScreen, LeaveAlternateScreen},
     QueueableCommand,
 };
+use raw_mode::RawModeGuard;
 
 mod raw_mode {
     use crossterm::terminal::{disable_raw_mode, enable_raw_mode};
 
     use super::Result;
 
-    pub struct Guard(());
+    pub struct RawModeGuard(());
 
-    impl Guard {
-        pub fn acquire() -> Result<Guard> {
+    impl RawModeGuard {
+        pub fn acquire() -> Result<RawModeGuard> {
             enable_raw_mode()?;
             Ok(Self(()))
         }
     }
 
-    impl Drop for Guard {
+    impl Drop for RawModeGuard {
         fn drop(&mut self) {
             disable_raw_mode().unwrap();
         }
@@ -37,7 +38,7 @@ mod raw_mode {
 }
 
 pub struct CrosstermRenderer<'b, W, M, H, F> {
-    guard: raw_mode::Guard,
+    guard: RawModeGuard,
     write: &'b mut W,
     margin: M,
     header: H,
@@ -50,6 +51,7 @@ pub struct CrosstermRenderer<'b, W, M, H, F> {
 /// Contains information about the cursor and the height
 /// of the last frame drawn.
 struct DrawState {
+    altscreen: bool,
     height: usize,
     // Anchor of the box
     anchor: Cursor,
@@ -67,31 +69,32 @@ where
     F: Footer<W>,
 {
     /// Draw the prompt.
-    fn draw(&mut self, data: RenderData) -> Result<()> {
-        self.move_to_frame_base()?;
+    fn draw(&mut self, data: &Editor) -> Result<()> {
+        if self.draw_state.altscreen {
+            self.write.queue(MoveTo(0, 0))?;
+        } else {
+            self.move_to_frame_base()?;
+        }
 
-        let (low, high) = self.calculate_draw_range(&data);
+        let (low, high, term_rows) = self.calculate_draw_range(&data);
 
         if (low, high) == (0, 0) {
             return Ok(());
         }
 
+        if data.altscreen && !self.draw_state.altscreen {
+            self.write.queue(EnterAlternateScreen)?;
+        } else if !data.altscreen && self.draw_state.altscreen {
+            self.write.queue(LeaveAlternateScreen)?;
+        }
+
         self.draw_state = DrawState::default();
+        self.draw_state.altscreen = data.altscreen;
 
         self.draw_header(&data)?;
-
-        self.draw_range(&data, low, high)?;
-
-        self.draw_state.anchor.col = self.margin.width();
-        self.draw_state.low = low;
-        self.draw_state.high = high;
-        self.draw_state.height += high - low;
-        self.draw_state.cursor.ln = high - low - 1;
-        self.draw_state.cursor.col = data.line(high - 1).len();
-
-        self.write.queue(Clear(ClearType::FromCursorDown))?;
-
+        self.draw_range(&data, low, high, term_rows)?;
         self.draw_footer(&data)?;
+        self.write.queue(Clear(ClearType::FromCursorDown))?;
 
         self.draw_cursor(&data)?;
         self.flush()
@@ -99,8 +102,13 @@ where
 
     /// Clear the drawn prompt on the screen.
     fn clear_draw(&mut self) -> Result<()> {
-        self.move_to_frame_base()?;
-        self.write.queue(Clear(ClearType::FromCursorDown))?;
+        if self.draw_state.altscreen {
+            self.write.queue(MoveTo(0, 0))?;
+            self.write.queue(Clear(ClearType::All))?;
+        } else {
+            self.move_to_frame_base()?;
+            self.write.queue(Clear(ClearType::FromCursorDown))?;
+        }
 
         self.draw_state = DrawState::default();
 
@@ -114,6 +122,11 @@ where
 
     fn finish(mut self) -> Result<()> {
         self.clear_draw()?;
+
+        // if self.draw_state.altscreen {
+        self.write.queue(LeaveAlternateScreen)?;
+        // }
+
         self.flush()
     }
 }
@@ -121,7 +134,7 @@ where
 impl<'w, W> DefaultRenderer<'w, W> {
     pub fn render_to(write: &'w mut W) -> Self {
         CrosstermRenderer {
-            guard: raw_mode::Guard::acquire().unwrap(),
+            guard: RawModeGuard::acquire().unwrap(),
             write,
             draw_state: DrawState::default(),
             margin: NoStyle,
@@ -191,22 +204,26 @@ where
     H: Header<W>,
     F: Footer<W>,
 {
-    fn calculate_draw_range(&self, data: &RenderData) -> (usize, usize) {
+    fn calculate_draw_range(&self, data: &Editor) -> (usize, usize, usize) {
         if let Ok((_, rows)) = crossterm::terminal::size() {
             // Rows of the terminal.
-            let term_rows = self
-                .max_height
+            let max_height = if !data.altscreen {
+                self.max_height
+            } else {
+                None
+            };
+            let term_rows = max_height
                 .unwrap_or(usize::MAX)
                 .min(rows.try_into().unwrap())
                 .saturating_sub(self.header.rows())
                 .saturating_sub(self.footer.rows());
             if term_rows == 0 {
-                return (0, 0);
+                return (0, 0, 0);
             }
             // Rows of the data to draw.
             let data_rows = data.line_count();
             // Current line of the data.
-            let line = data.focus().ln;
+            let line = data.selection.focus.ln;
             if data_rows > term_rows {
                 let (low, high) = if line >= self.draw_state.high {
                     (line - term_rows + 1, line + 1)
@@ -215,10 +232,12 @@ where
                 } else {
                     (self.draw_state.low, self.draw_state.high)
                 };
-                return (low, high.min(data_rows));
+                return (low, high.min(data_rows), term_rows);
+            } else {
+                return (0, data.line_count(), term_rows);
             }
         }
-        (0, data.line_count())
+        (0, data.line_count(), 0)
     }
 
     // Move to the base of the frame (not the anchor).
@@ -231,9 +250,9 @@ where
 
     // Position the cursor right after drawing a frame
     // (assuming no other cursor adjustments made).
-    fn draw_cursor(&mut self, data: &RenderData) -> Result<()> {
+    fn draw_cursor(&mut self, data: &Editor) -> Result<()> {
         // Move to the correct row.
-        let line = data.focus().ln;
+        let line = data.selection.focus.ln;
         let frame_height = self.draw_state.height;
         let relative_ln = line - self.draw_state.low;
         let up_offset = frame_height - 1 - self.draw_state.anchor.ln - relative_ln;
@@ -241,7 +260,7 @@ where
         self.write.queue(MoveUp(Self::usize_to_u16(up_offset)))?;
 
         // Move to the correct column.
-        let col = data.focus().col.min(data.current_line().len());
+        let col = data.selection.focus.col.min(data.curr_ln_len());
         let n = self.draw_state.anchor.col + col + 1;
         self.write.queue(MoveToColumn(Self::usize_to_u16(n)))?;
 
@@ -251,7 +270,7 @@ where
         Ok(())
     }
 
-    fn draw_header(&mut self, data: &RenderData) -> Result<()> {
+    fn draw_header(&mut self, data: &Editor) -> Result<()> {
         self.draw_state.height += self.header.rows();
         self.draw_state.anchor.ln += self.header.rows();
 
@@ -265,17 +284,19 @@ where
 
     /// Draw the line given an index.
     /// This method does not move the cursor.
-    fn draw_line(&mut self, data: &RenderData, line: usize) -> Result<()> {
+    fn draw_line(&mut self, data: &Editor, line: usize) -> Result<()> {
         self.cursor_to_left_term_edge()?;
 
         self.margin.draw(self.write, line, data)?;
-        data.write_line(line, self.write)?;
-
+        if line < data.line_count() {
+            data.write_line(line, self.write)?;
+        }
         self.write.queue(Clear(ClearType::UntilNewLine))?;
+
         Ok(())
     }
 
-    fn draw_footer(&mut self, data: &RenderData) -> Result<()> {
+    fn draw_footer(&mut self, data: &Editor) -> Result<()> {
         self.draw_state.height += self.footer.rows();
 
         self.cursor_to_left_term_edge()?;
@@ -287,7 +308,13 @@ where
         Ok(())
     }
 
-    fn draw_range(&mut self, data: &RenderData, low: usize, high: usize) -> Result<()> {
+    fn draw_range(
+        &mut self,
+        data: &Editor,
+        low: usize,
+        high: usize,
+        term_rows: usize,
+    ) -> Result<()> {
         // Print out the contents.
         for i in low..high {
             self.draw_line(&data, i)?;
@@ -296,6 +323,23 @@ where
                 self.write.write(b"\n")?;
             }
         }
+
+        self.draw_state.anchor.col = self.margin.width();
+        self.draw_state.low = low;
+        self.draw_state.high = high;
+        self.draw_state.height += high - low;
+        self.draw_state.cursor.ln = high - low - 1;
+        self.draw_state.cursor.col = data.line(high - 1).len();
+
+        if data.altscreen {
+            for i in high..low + term_rows {
+                self.write.write(b"\n")?;
+                self.draw_line(&data, i)?;
+            }
+            self.draw_state.height += low + term_rows - high;
+            self.draw_state.cursor.ln += low + term_rows - high;
+        }
+
         Ok(())
     }
 

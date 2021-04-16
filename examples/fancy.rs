@@ -21,7 +21,8 @@ fn main() -> Result<()> {
         .footer(FancyFooter);
 
     // Print out some prompt using styling options.
-    let term = Editor::with_renderer(renderer);
-    dbg!(term.read(NormalKeybinding)?);
+    let mut term = Editor::default();
+    term.read(NormalKeybinding, renderer)?;
+    dbg!(term.contents());
     Ok(())
 }

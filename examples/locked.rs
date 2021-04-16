@@ -12,7 +12,7 @@ fn main() -> Result<()> {
     let renderer = CrosstermRenderer::render_to(&mut lock);
 
     // Print out some prompt using styling options.
-    let term = Editor::with_renderer(renderer);
-    dbg!(term.read(NormalKeybinding)?);
+    let mut term = Editor::default();
+    dbg!(term.read(NormalKeybinding, renderer)?);
     Ok(())
 }

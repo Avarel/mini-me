@@ -1,18 +1,18 @@
-use crate::{editor::Editor, renderer::Renderer, Result};
+use crate::{editor::Editor, Result};
 
 use crossterm::event::{read, Event, KeyCode, KeyEvent, KeyModifiers};
 
 /// Generic keybinding trait.
 pub trait Keybinding {
     /// Read a key from the environment and act upon the editor.
-    fn read(&self, editor: &mut Editor<impl Renderer>) -> Result<bool>;
+    fn read(&self, editor: &mut Editor) -> Result<bool>;
 }
 
 /// Default keybindings for the editor.
 pub struct NormalKeybinding;
 
 impl Keybinding for NormalKeybinding {
-    fn read(&self, editor: &mut Editor<impl Renderer>) -> Result<bool> {
+    fn read(&self, editor: &mut Editor) -> Result<bool> {
         let key_event = read()?;
         match key_event {
             Event::Key(k) => Self::process_key_event(editor, k),
@@ -22,7 +22,7 @@ impl Keybinding for NormalKeybinding {
 }
 
 impl NormalKeybinding {
-    fn process_key_event(editor: &mut Editor<impl Renderer>, event: KeyEvent) -> Result<bool> {
+    fn process_key_event(editor: &mut Editor, event: KeyEvent) -> Result<bool> {
         let code = event.code;
         let ln_count = editor.line_count();
         // let mut cursor = editor.cursor();
@@ -43,7 +43,7 @@ impl NormalKeybinding {
                     .curr_ln_chars()
                     .take_while(|c| c.is_whitespace())
                     .count();
-                if editor.focus.col == leading_spaces {
+                if editor.selection.focus.col == leading_spaces {
                     editor.move_to_col(0, shifted);
                 } else {
                     editor.move_to_col(leading_spaces, shifted);
@@ -54,6 +54,10 @@ impl NormalKeybinding {
             KeyCode::Backspace => editor.backspace(),
             KeyCode::Char('h') if control => editor.backspace(),
             KeyCode::Delete => editor.delete(),
+
+            KeyCode::F(12) => {
+                editor.altscreen = !editor.altscreen;
+            }
 
             #[cfg(feature = "unstable")]
             KeyCode::Char('c') if control => {
@@ -72,7 +76,9 @@ impl NormalKeybinding {
                         clipboard.set_text(txt.to_string()).unwrap();
                         editor.delete();
                     } else {
-                        clipboard.set_text(editor.remove_line(editor.focus.ln)).unwrap();
+                        clipboard
+                            .set_text(editor.remove_line(editor.selection.focus.ln))
+                            .unwrap();
                     }
                 }
             }
@@ -84,14 +90,14 @@ impl NormalKeybinding {
                     }
                 }
             }
-            
+
             KeyCode::Tab => {
                 editor.clamp();
-                let soft = 4 - editor.focus.col % 4;
+                let soft = 4 - editor.selection.focus.col % 4;
                 for _ in 0..soft {
                     editor.insert_char(0, ' ');
                 }
-                editor.focus.col += soft;
+                editor.selection.focus.col += soft;
             }
             KeyCode::BackTab => {
                 editor.clamp();
@@ -106,7 +112,7 @@ impl NormalKeybinding {
             }
             KeyCode::Esc => return Ok(false),
             KeyCode::Enter => {
-                if !alt && editor.curr_ln_len() == 0 && editor.focus.ln + 1 == ln_count {
+                if !alt && editor.curr_ln_len() == 0 && editor.selection.focus.ln + 1 == ln_count {
                     return Ok(false);
                 } else {
                     editor.type_char('\n');
@@ -123,7 +129,7 @@ impl NormalKeybinding {
 pub struct DebugKeybinding;
 
 impl Keybinding for DebugKeybinding {
-    fn read(&self, editor: &mut Editor<impl Renderer>) -> Result<bool> {
+    fn read(&self, editor: &mut Editor) -> Result<bool> {
         let key_event = read()?;
         match key_event {
             Event::Key(k) => Self::process_key_event(editor, k),
@@ -133,7 +139,7 @@ impl Keybinding for DebugKeybinding {
 }
 
 impl DebugKeybinding {
-    fn process_key_event(editor: &mut Editor<impl Renderer>, event: KeyEvent) -> Result<bool> {
+    fn process_key_event(editor: &mut Editor, event: KeyEvent) -> Result<bool> {
         let code = event.code;
         match code {
             KeyCode::Esc => return Ok(false),

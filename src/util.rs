@@ -1,10 +1,4 @@
 use ropey::RopeSlice;
-
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Cursor {
-    pub ln: usize,
-    pub col: usize,
-}
  
 pub(crate) fn trimmed(rope: RopeSlice) -> RopeSlice {
     let rope_len = rope.len_chars();

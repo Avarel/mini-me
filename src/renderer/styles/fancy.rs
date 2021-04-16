@@ -1,5 +1,5 @@
 use super::{Footer, Header, Margin};
-use crate::{renderer::RenderData, Result};
+use crate::{renderer::Editor, Result};
 use crossterm::{
     style::Colorize,
     terminal::{Clear, ClearType},
@@ -16,7 +16,7 @@ impl<W: Write> Header<W> for FancyHeader<'_> {
         1
     }
 
-    fn draw(&mut self, w: &mut W, _: &RenderData) -> Result<()> {
+    fn draw(&mut self, w: &mut W, _: &Editor) -> Result<()> {
         write!(
             w,
             "{} {}",
@@ -39,9 +39,15 @@ impl<W: Write> Margin<W> for FancyGutter {
         9
     }
 
-    fn draw(&mut self, write: &mut W, line_idx: usize, data: &RenderData) -> Result<()> {
-        if line_idx + 1 == data.line_count() && data.last_line().len() == 0 {
-            if line_idx == data.focus().ln as usize {
+    fn draw(&mut self, write: &mut W, line_idx: usize, data: &Editor) -> Result<()> {
+        if line_idx + 1 > data.line_count() {
+            write!(
+                write,
+                "{}  ",
+                "       ".on_dark_grey()
+            )?;
+        } else if line_idx + 1 == data.line_count() && data.last_line().len() == 0 {
+            if line_idx == data.selection.focus.ln as usize {
                 write!(
                     write,
                     "{} {}",
@@ -56,7 +62,7 @@ impl<W: Write> Margin<W> for FancyGutter {
                     Self::MSG.dark_grey()
                 )?;
             }
-        } else if line_idx == data.focus().ln as usize {
+        } else if line_idx == data.selection.focus.ln as usize {
             write!(
                 write,
                 "{} ",
@@ -81,7 +87,7 @@ impl<W: Write> Footer<W> for FancyFooter {
         1
     }
 
-    fn draw(&mut self, w: &mut W, data: &RenderData) -> Result<()> {
+    fn draw(&mut self, w: &mut W, data: &Editor) -> Result<()> {
         write!(
             w,
             "{}{}{}{}",
@@ -90,8 +96,8 @@ impl<W: Write> Footer<W> for FancyFooter {
             format!(" Chars: {:>3} ", data.char_count()),
             format!(
                 " Ln {}, Col {} ",
-                data.focus().ln,
-                data.focus().col.min(data.current_line().len())
+                data.selection.focus.ln,
+                data.selection.focus.col.min(data.curr_ln().len())
             )
         )?;
 

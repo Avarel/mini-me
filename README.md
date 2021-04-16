@@ -14,6 +14,7 @@ An embeddable, customizable, inline text-editor based on `crossterm`.
 * Customize header, footer, and or margin gutters.
     * Preset styles are unstable.
 * Range selection.
+* Toggle-able fullscreen mode.
 * (Unstable) Clipboard support.
 
 ## Binary Installation
@@ -26,6 +27,7 @@ The binary can be used by invoking `minime -h`.
 ## Default Controls
 * Arrow keys work as expected.
 * Home, end, delete, Tab and backtab mirrors VSCode behavior.
+* F12 to enter full screen mode.
 * Shift-arrow keys create a selection range.
 * `Esc` or `Enter` on the last empty line to close and submit the prompt.
 * Control-X/C/V clipboard support is unstable.
@@ -39,10 +41,10 @@ use minime::{editor::keybindings::NormalKeybinding, editor::Editor, Result};
 
 fn main() -> Result<()> {
     println!("Write something cool!");
-
-    let term = Editor::default();
-
-    dbg!(term.read(NormalKeybinding))?;
+    // Build the prompt.
+    let mut term = Editor::default();
+    term.read(NormalKeybinding, DefaultRenderer::default())?;
+    dbg!(term.contents());
     Ok(())
 }
 ```
@@ -75,7 +77,8 @@ fn main() -> Result<()> {
 
     // Print out some prompt using styling options.
     let term = Editor::with_renderer(renderer);
-    dbg!(term.read(NormalKeybinding)?);
+    term.read(NormalKeybinding, renderer)?;
+    dbg!(term.contents());
     Ok(())
 }
 ```
