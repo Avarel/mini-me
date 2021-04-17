@@ -106,10 +106,6 @@ impl Editor {
         trimmed(self.buf.line(self.selection.focus.ln)).chars()
     }
 
-    pub fn last_line(&self) -> Cow<str> {
-        self.line(self.buf.len_lines() - 1)
-    }
-
     /// Get the current line.
     pub fn curr_ln(&self) -> Cow<str> {
         Cow::from(trimmed(self.buf.line(self.selection.focus.ln)))

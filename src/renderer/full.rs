@@ -78,7 +78,7 @@ where
 
         let (low, high, term_rows) = self.calculate_draw_range(&data);
 
-        if (low, high) == (0, 0) {
+        if term_rows == 0 {
             return Ok(());
         }
 
@@ -232,12 +232,13 @@ where
                 } else {
                     (self.draw_state.low, self.draw_state.high)
                 };
-                return (low, high.min(data_rows), term_rows);
+                (low, high.min(data_rows), term_rows)
             } else {
-                return (0, data.line_count(), term_rows);
+                (0, data.line_count(), term_rows)
             }
+        } else {
+            (0, data.line_count(), 0)
         }
-        (0, data.line_count(), 0)
     }
 
     // Move to the base of the frame (not the anchor).
@@ -349,6 +350,7 @@ where
         Ok(())
     }
 
+    #[doc(hidden)]
     fn usize_to_u16(n: usize) -> u16 {
         n.try_into().unwrap_or(std::u16::MAX)
     }

@@ -46,7 +46,7 @@ impl<W: Write> Margin<W> for FancyGutter {
                 "{}  ",
                 "       ".on_dark_grey()
             )?;
-        } else if line_idx + 1 == data.line_count() && data.last_line().len() == 0 {
+        } else if line_idx + 1 == data.line_count() && data.line(line_idx).len() == 0 {
             if line_idx == data.selection.focus.ln as usize {
                 write!(
                     write,

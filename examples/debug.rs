@@ -22,6 +22,7 @@ fn main() -> Result<()> {
 
     // Print out some prompt using styling options.
     let mut term = Editor::default();
+
     term.read(DebugKeybinding, renderer)?;
     dbg!(term.contents());
     Ok(())

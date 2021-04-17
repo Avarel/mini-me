@@ -6,6 +6,12 @@ use crate::Result;
 pub mod classic;
 pub mod fancy;
 
+pub struct Style<'w, W> {
+    pub header: &'w dyn Header<W>,
+    pub margin: &'w dyn Margin<W>,
+    pub footer: &'w dyn Footer<W>
+}
+
 pub trait Header<W> {
     fn rows(&self) -> usize;
     fn draw(&mut self, write: &mut W, data: &Editor) -> Result<()>;
