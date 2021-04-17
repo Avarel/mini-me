@@ -68,7 +68,7 @@ impl Editor {
                 return Ok(());
             }
         }
-        write_rope(write, self.buf.line(line_idx))?;
+        write_rope(write, trimmed(self.buf.line(line_idx)))?;
         Ok(())
     }
 }

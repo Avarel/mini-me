@@ -40,7 +40,11 @@ impl<W: Write> Margin<W> for ClassicGutter {
     }
 
     fn draw(&mut self, write: &mut W, line_idx: usize, data: &Editor) -> Result<()> {
-        write!(write, "{:>width$}", line_idx + 1, width = 5)?;
+        if line_idx + 1 > data.line_count() {
+            write!(write, "{:>width$}", "", width = Self::WIDTH)?;
+        } else {
+            write!(write, "{:>width$}", line_idx + 1, width = Self::WIDTH)?;
+        }
 
         write.write(
             if line_idx == data.selection.focus.ln {
