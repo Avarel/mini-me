@@ -3,10 +3,7 @@ use std::{
     io::{stdout, Stdout, Write},
 };
 
-use super::{
-    styles::{Footer, Header, Margin, NoStyle},
-    Editor, Renderer,
-};
+use super::{Editor, Renderer, styles::{NoStyle, Style}};
 use crate::{editor::selection::Cursor, Result};
 
 use crossterm::{
@@ -37,12 +34,10 @@ mod raw_mode {
     }
 }
 
-pub struct CrosstermRenderer<'b, W, M, H, F> {
-    guard: RawModeGuard,
-    write: &'b mut W,
-    margin: M,
-    header: H,
-    footer: F,
+pub struct CrosstermRenderer<'w, W, S> {
+    _guard: RawModeGuard,
+    write: &'w mut W,
+    style: S,
     draw_state: DrawState,
     max_height: Option<usize>,
 }
@@ -61,12 +56,10 @@ struct DrawState {
     cursor: Cursor,
 }
 
-impl<W, M, H, F> Renderer for CrosstermRenderer<'_, W, M, H, F>
+impl<W, S> Renderer for CrosstermRenderer<'_, W, S>
 where
     W: Write,
-    M: Margin<W>,
-    H: Header<W>,
-    F: Footer<W>,
+    S: Style<W>
 {
     /// Draw the prompt.
     fn draw(&mut self, data: &Editor) -> Result<()> {
@@ -131,78 +124,34 @@ where
     }
 }
 
-impl<'w, W> DefaultRenderer<'w, W> {
+impl<'w, W> CrosstermRenderer<'w, W, NoStyle> {
     pub fn render_to(write: &'w mut W) -> Self {
         CrosstermRenderer {
-            guard: RawModeGuard::acquire().unwrap(),
+            _guard: RawModeGuard::acquire().unwrap(),
             write,
             draw_state: DrawState::default(),
-            margin: NoStyle,
-            header: NoStyle,
-            footer: NoStyle,
-            max_height: None,
+            style: NoStyle,
+            max_height: None
         }
     }
 }
 
-impl<'w, W, M, H, F> CrosstermRenderer<'w, W, M, H, F> {
-    pub fn max_height(self, max_height: Option<usize>) -> Self {
-        Self { max_height, ..self }
-    }
-}
-
-// region: Swap constructors
-impl<'w, W, M1, H, F> CrosstermRenderer<'w, W, M1, H, F> {
-    /// Swap out a margin formatter.
-    pub fn margin<M2>(self, margin: M2) -> CrosstermRenderer<'w, W, M2, H, F> {
+impl<'w, W, S> CrosstermRenderer<'w, W, S> {
+    pub fn with_style<S2>(self, style: S2) -> CrosstermRenderer<'w, W, S2> {
         CrosstermRenderer {
-            guard: self.guard,
+            _guard: self._guard,
             write: self.write,
             draw_state: self.draw_state,
-            margin,
-            header: self.header,
-            footer: self.footer,
-            max_height: self.max_height,
+            style,
+            max_height: self.max_height
         }
     }
 }
 
-impl<'w, W, M, H1, F> CrosstermRenderer<'w, W, M, H1, F> {
-    /// Swap out a header formatter.
-    pub fn header<H2>(self, header: H2) -> CrosstermRenderer<'w, W, M, H2, F> {
-        CrosstermRenderer {
-            guard: self.guard,
-            write: self.write,
-            draw_state: self.draw_state,
-            margin: self.margin,
-            header,
-            footer: self.footer,
-            max_height: self.max_height,
-        }
-    }
-}
-
-impl<'w, W, M, H, F1> CrosstermRenderer<'w, W, M, H, F1> {
-    /// Swap out a footer formatter.
-    pub fn footer<F2>(self, footer: F2) -> CrosstermRenderer<'w, W, M, H, F2> {
-        CrosstermRenderer {
-            guard: self.guard,
-            write: self.write,
-            draw_state: self.draw_state,
-            margin: self.margin,
-            header: self.header,
-            footer,
-            max_height: self.max_height,
-        }
-    }
-}
-
-impl<'w, W, M, H, F> CrosstermRenderer<'w, W, M, H, F>
+impl<'w, W, S> CrosstermRenderer<'w, W, S>
 where
     W: Write,
-    M: Margin<W>,
-    H: Header<W>,
-    F: Footer<W>,
+    S: Style<W>
 {
     fn calculate_draw_range(&self, data: &Editor) -> (usize, usize, usize) {
         if let Ok((_, rows)) = crossterm::terminal::size() {
@@ -215,8 +164,8 @@ where
             let term_rows = max_height
                 .unwrap_or(usize::MAX)
                 .min(rows.try_into().unwrap())
-                .saturating_sub(self.header.rows())
-                .saturating_sub(self.footer.rows());
+                .saturating_sub(self.style.header_rows())
+                .saturating_sub(self.style.footer_rows());
             if term_rows == 0 {
                 return (0, 0, 0);
             }
@@ -272,12 +221,12 @@ where
     }
 
     fn draw_header(&mut self, data: &Editor) -> Result<()> {
-        self.draw_state.height += self.header.rows();
-        self.draw_state.anchor.ln += self.header.rows();
+        self.draw_state.height += self.style.header_rows();
+        self.draw_state.anchor.ln += self.style.header_rows();
 
         self.cursor_to_left_term_edge()?;
-        self.header.draw(self.write, data)?;
-        if self.header.rows() > 0 {
+        self.style.draw_header(self.write, data)?;
+        if self.style.header_rows() > 0 {
             self.write.write(b"\n")?;
         }
         Ok(())
@@ -288,7 +237,7 @@ where
     fn draw_line(&mut self, data: &Editor, line: usize) -> Result<()> {
         self.cursor_to_left_term_edge()?;
 
-        self.margin.draw(self.write, line, data)?;
+        self.style.draw_gutter(self.write, line, data)?;
         if line < data.line_count() {
             data.write_line(line, self.write)?;
         }
@@ -298,14 +247,14 @@ where
     }
 
     fn draw_footer(&mut self, data: &Editor) -> Result<()> {
-        self.draw_state.height += self.footer.rows();
+        self.draw_state.height += self.style.footer_rows();
 
         self.cursor_to_left_term_edge()?;
-        if self.footer.rows() > 0 {
+        if self.style.footer_rows() > 0 {
             self.write.write(b"\n")?;
         }
         // write!(self.write, "{} {} {}", self.draw_state.low, self.draw_state.high, data.cursor.ln)?;
-        self.footer.draw(self.write, data)?;
+        self.style.draw_footer(self.write, data)?;
         Ok(())
     }
 
@@ -325,7 +274,7 @@ where
             }
         }
 
-        self.draw_state.anchor.col = self.margin.width();
+        self.draw_state.anchor.col = self.style.gutter_width();
         self.draw_state.low = low;
         self.draw_state.high = high;
         self.draw_state.height += high - low;
@@ -356,9 +305,7 @@ where
     }
 }
 
-pub type DefaultRenderer<'w, W> = CrosstermRenderer<'w, W, NoStyle, NoStyle, NoStyle>;
-
-impl Default for DefaultRenderer<'static, Stdout> {
+impl Default for CrosstermRenderer<'static, Stdout, NoStyle> {
     fn default() -> Self {
         let out = Box::new(stdout());
         CrosstermRenderer::render_to(Box::leak(out))

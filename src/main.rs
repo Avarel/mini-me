@@ -10,7 +10,10 @@ use minime::{
     editor::{keybindings::NormalKeybinding, Editor},
     renderer::{
         full::CrosstermRenderer,
-        styles::fancy::{FancyFooter, FancyGutter},
+        styles::{
+            fancy::{FancyFooter, FancyGutter},
+            StyleBundle,
+        },
     },
     Result,
 };
@@ -47,7 +50,7 @@ fn main() -> Result<()> {
                 .help("Do not emit the editor content if a file is not specified")
                 .long("no-emit")
                 .short("ne")
-                .conflicts_with("OUTPUT")
+                .conflicts_with("OUTPUT"),
         )
         .arg(
             Arg::with_name("OUTPUT")
@@ -75,10 +78,12 @@ fn main() -> Result<()> {
     let stderr = std::io::stderr();
     let mut lock = BufWriter::new(stderr.lock());
 
-    let renderer = CrosstermRenderer::render_to(&mut lock)
+    let style = StyleBundle::new()
         .max_height(max_height)
         .margin(FancyGutter)
         .footer(FancyFooter);
+
+    let renderer = CrosstermRenderer::render_to(&mut lock).style(style);
 
     let mut term = Editor::default();
 

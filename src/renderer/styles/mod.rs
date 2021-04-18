@@ -6,82 +6,39 @@ use crate::Result;
 pub mod classic;
 pub mod fancy;
 
-pub struct Style<'w, W> {
-    pub header: &'w dyn Header<W>,
-    pub margin: &'w dyn Margin<W>,
-    pub footer: &'w dyn Footer<W>
-}
-
-pub trait Header<W> {
-    fn rows(&self) -> usize;
-    fn draw(&mut self, write: &mut W, data: &Editor) -> Result<()>;
+pub trait Style<W> {
+    fn footer_rows(&self) -> usize;
+    fn header_rows(&self) -> usize;
+    fn gutter_width(&self) -> usize;
+    fn draw_header(&mut self, write: &mut W, data: &Editor) -> Result<()>;
+    fn draw_gutter(&mut self, write: &mut W, line_idx: usize, data: &Editor) -> Result<()>;
+    fn draw_footer(&mut self, write: &mut W, data: &Editor) -> Result<()>;
 }
 
 pub struct NoStyle;
 
-impl<W> Header<W> for NoStyle {
-    fn rows(&self) -> usize {
+impl<W> Style<W> for NoStyle {
+    fn footer_rows(&self) -> usize {
         0
     }
 
-    fn draw(&mut self, _: &mut W, _: &Editor) -> Result<()> {
+    fn header_rows(&self) -> usize {
+        0
+    }
+
+    fn gutter_width(&self) -> usize {
+        0
+    }
+
+    fn draw_header(&mut self, write: &mut W, data: &Editor) -> Result<()> {
         Ok(())
     }
-}
 
-impl<W: Write> Header<W> for Box<dyn Header<W>> {
-    fn rows(&self) -> usize {
-        (**self).rows()
-    }
-    fn draw(&mut self, write: &mut W, data: &Editor) -> Result<()> {
-        (**self).draw(write, data)
-    }
-}
-
-pub trait Margin<W> {
-    fn width(&self) -> usize;
-    fn draw(&mut self, write: &mut W, line_idx: usize, data: &Editor) -> Result<()>;
-}
-
-impl<W: Write> Margin<W> for Box<dyn Margin<W>> {
-    fn width(&self) -> usize {
-        (**self).width()
-    }
-    fn draw(&mut self, write: &mut W, line_idx: usize, data: &Editor) -> Result<()> {
-        (**self).draw(write, line_idx, data)
-    }
-}
-
-impl<W> Margin<W> for NoStyle {
-    fn width(&self) -> usize {
-        0
-    }
-
-    fn draw(&mut self, _: &mut W, _: usize, _: &Editor) -> Result<()> {
+    fn draw_gutter(&mut self, write: &mut W, line_idx: usize, data: &Editor) -> Result<()> {
         Ok(())
     }
-}
 
-pub trait Footer<W> {
-    fn rows(&self) -> usize;
-    fn draw(&mut self, write: &mut W, data: &Editor) -> Result<()>;
-}
-
-impl<W: Write> Footer<W> for Box<dyn Footer<W>> {
-    fn rows(&self) -> usize {
-        (**self).rows()
-    }
-    fn draw(&mut self, write: &mut W, data: &Editor) -> Result<()> {
-        (**self).draw(write, data)
-    }
-}
-
-impl<W> Footer<W> for NoStyle {
-    fn rows(&self) -> usize {
-        0
-    }
-
-    fn draw(&mut self, _: &mut W, _: &Editor) -> Result<()> {
+    fn draw_footer(&mut self, write: &mut W, data: &Editor) -> Result<()> {
         Ok(())
     }
 }

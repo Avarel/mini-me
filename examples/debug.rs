@@ -3,6 +3,7 @@ use minime::{
     renderer::{
         full::CrosstermRenderer,
         styles::fancy::{FancyFooter, FancyGutter, FancyHeader},
+        styles::StyleBundle,
     },
     Result,
 };
@@ -12,13 +13,16 @@ fn main() -> Result<()> {
     let stdout = std::io::stdout();
     let mut lock = stdout.lock();
 
-    let renderer = CrosstermRenderer::render_to(&mut lock)
+    let style = StyleBundle::new()
         .max_height(Some(10))
         .header(FancyHeader {
-            message: "Debug keybindings for keybinding development",
+            message: "Type something :)",
         })
         .margin(FancyGutter)
         .footer(FancyFooter);
+
+    let renderer = CrosstermRenderer::render_to(&mut lock)
+        .style(style);
 
     // Print out some prompt using styling options.
     let mut term = Editor::default();
