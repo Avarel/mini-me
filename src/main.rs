@@ -8,13 +8,7 @@ use clap::{App, Arg};
 
 use minime::{
     editor::{keybindings::NormalKeybinding, Editor},
-    renderer::{
-        full::CrosstermRenderer,
-        styles::{
-            fancy::{FancyFooter, FancyGutter},
-            StyleBundle,
-        },
-    },
+    renderer::{full::CrosstermRenderer, styles::fancy::FancyStyle},
     Result,
 };
 
@@ -78,12 +72,13 @@ fn main() -> Result<()> {
     let stderr = std::io::stderr();
     let mut lock = BufWriter::new(stderr.lock());
 
-    let style = StyleBundle::new()
-        .max_height(max_height)
-        .margin(FancyGutter)
-        .footer(FancyFooter);
+    let style = FancyStyle::new()
+        .with_header_message(file_path)
+        .with_gutter_message("Press enter to submit");
 
-    let renderer = CrosstermRenderer::render_to(&mut lock).style(style);
+    let renderer = CrosstermRenderer::render_to(&mut lock)
+        .max_height(max_height)
+        .with_style(style);
 
     let mut term = Editor::default();
 

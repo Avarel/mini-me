@@ -1,4 +1,4 @@
-use super::{Style};
+use super::Style;
 use crate::{renderer::Editor, Result};
 use crossterm::{
     style::Colorize,
@@ -7,14 +7,33 @@ use crossterm::{
 };
 use std::io::Write;
 
-// pub struct FancyHeader<'s> {
-//     pub message: &'s str
-// }
-
 pub struct FancyStyle<'s> {
-    pub message: &'s str
+    header_message: Option<&'s str>,
+    gutter_message: &'s str,
 }
 
+impl<'s> FancyStyle<'s> {
+    pub fn new() -> Self {
+        Self {
+            header_message: None,
+            gutter_message: ""
+        }
+    }
+
+    pub fn with_gutter_message(self, gutter_message: &'s str) -> Self {
+        Self {
+            gutter_message,
+            ..self
+        }
+    }
+
+    pub fn with_header_message(self, header_message: Option<&'s str>) -> Self {
+        Self {
+            header_message,
+            ..self
+        }
+    }
+}
 
 impl<W: Write> Style<W> for FancyStyle<'_> {
     fn footer_rows(&self) -> usize {
@@ -22,38 +41,47 @@ impl<W: Write> Style<W> for FancyStyle<'_> {
     }
 
     fn header_rows(&self) -> usize {
-        todo!()
+        if self.header_message.is_some() {
+            1
+        } else {
+            0
+        }
     }
 
     fn gutter_width(&self) -> usize {
-        todo!()
+        9
     }
 
-    fn draw_header(&mut self, write: &mut W, data: &Editor) -> Result<()> {
-        todo!()
+    fn draw_header(&mut self, write: &mut W, _: &Editor) -> Result<()> {
+        if let Some(header_message) = self.header_message {
+            write!(
+                write,
+                "{} {}",
+                "       ".black().on_dark_grey(),
+                header_message
+            )?;
+            write.queue(Clear(ClearType::UntilNewLine))?;
+        }
+        Ok(())
     }
 
     fn draw_gutter(&mut self, write: &mut W, line_idx: usize, data: &Editor) -> Result<()> {
         if line_idx + 1 > data.line_count() {
-            write!(
-                write,
-                "{}  ",
-                "       ".on_dark_grey()
-            )?;
+            write!(write, "{}  ", "       ".on_dark_grey())?;
         } else if line_idx + 1 == data.line_count() && data.line(line_idx).len() == 0 {
             if line_idx == data.selection.focus.ln as usize {
                 write!(
                     write,
                     "{} {}",
                     "      ▶ ".black().on_green(),
-                    Self::MSG.dark_grey()
+                    self.gutter_message.dark_grey()
                 )?;
             } else {
                 write!(
                     write,
                     "{}  {}",
                     "     ▶ ".black().on_green(),
-                    Self::MSG.dark_grey()
+                    self.gutter_message.dark_grey()
                 )?;
             }
         } else if line_idx == data.selection.focus.ln as usize {
@@ -76,106 +104,18 @@ impl<W: Write> Style<W> for FancyStyle<'_> {
     fn draw_footer(&mut self, write: &mut W, data: &Editor) -> Result<()> {
         write!(
             write,
-            "{} {}",
-            "       ".black().on_dark_grey(),
-            self.message
+            "{}{}{}{}",
+            "  info ".black().on_dark_grey(),
+            format!(" Lines: {:>3} ", data.line_count()),
+            format!(" Chars: {:>3} ", data.char_count()),
+            format!(
+                " Ln {}, Col {} ",
+                data.selection.focus.ln,
+                data.selection.focus.col.min(data.curr_ln().len())
+            )
         )?;
+
         write.queue(Clear(ClearType::UntilNewLine))?;
         Ok(())
     }
 }
-
-// impl Header for FancyHeader<'_> {
-//     fn rows(&self) -> usize {
-//         1
-//     }
-
-//     fn draw(&mut self, w: &mut dyn Write, _: &Editor) -> Result<()> {
-//         write!(
-//             w,
-//             "{} {}",
-//             "       ".black().on_dark_grey(),
-//             self.message
-//         )?;
-//         w.queue(Clear(ClearType::UntilNewLine))?;
-//         Ok(())
-//     }
-// }
-
-// pub struct FancyGutter;
-
-// impl FancyGutter {
-//     const MSG: &'static str = "Press enter to submit";
-// }
-
-// impl Margin for FancyGutter {
-//     fn width(&self) -> usize {
-//         9
-//     }
-
-//     fn draw(&mut self, write: &mut dyn Write, line_idx: usize, data: &Editor) -> Result<()> {
-//         if line_idx + 1 > data.line_count() {
-//             write!(
-//                 write,
-//                 "{}  ",
-//                 "       ".on_dark_grey()
-//             )?;
-//         } else if line_idx + 1 == data.line_count() && data.line(line_idx).len() == 0 {
-//             if line_idx == data.selection.focus.ln as usize {
-//                 write!(
-//                     write,
-//                     "{} {}",
-//                     "      ▶ ".black().on_green(),
-//                     Self::MSG.dark_grey()
-//                 )?;
-//             } else {
-//                 write!(
-//                     write,
-//                     "{}  {}",
-//                     "     ▶ ".black().on_green(),
-//                     Self::MSG.dark_grey()
-//                 )?;
-//             }
-//         } else if line_idx == data.selection.focus.ln as usize {
-//             write!(
-//                 write,
-//                 "{} ",
-//                 format!("  {:>5} ", line_idx + 1).black().on_dark_grey()
-//             )?;
-//         } else {
-//             write!(
-//                 write,
-//                 "{}  ",
-//                 format!(" {:>5} ", line_idx + 1).black().on_dark_grey()
-//             )?;
-//         }
-
-//         Ok(())
-//     }
-// }
-
-// pub struct FancyFooter;
-
-// impl Footer for FancyFooter {
-//     fn rows(&self) -> usize {
-//         1
-//     }
-
-//     fn draw(&mut self, w: &mut dyn Write, data: &Editor) -> Result<()> {
-//         write!(
-//             w,
-//             "{}{}{}{}",
-//             "  info ".black().on_dark_grey(),
-//             format!(" Lines: {:>3} ", data.line_count()),
-//             format!(" Chars: {:>3} ", data.char_count()),
-//             format!(
-//                 " Ln {}, Col {} ",
-//                 data.selection.focus.ln,
-//                 data.selection.focus.col.min(data.curr_ln().len())
-//             )
-//         )?;
-
-//         w.queue(Clear(ClearType::UntilNewLine))?;
-//         Ok(())
-//     }
-// }

@@ -1,5 +1,3 @@
-use std::io::Write;
-
 use super::Editor;
 use crate::Result;
 
@@ -30,15 +28,15 @@ impl<W> Style<W> for NoStyle {
         0
     }
 
-    fn draw_header(&mut self, write: &mut W, data: &Editor) -> Result<()> {
+    fn draw_header(&mut self, _: &mut W, _: &Editor) -> Result<()> {
         Ok(())
     }
 
-    fn draw_gutter(&mut self, write: &mut W, line_idx: usize, data: &Editor) -> Result<()> {
+    fn draw_gutter(&mut self, _: &mut W, _: usize, _: &Editor) -> Result<()> {
         Ok(())
     }
 
-    fn draw_footer(&mut self, write: &mut W, data: &Editor) -> Result<()> {
+    fn draw_footer(&mut self, _: &mut W, _: &Editor) -> Result<()> {
         Ok(())
     }
 }

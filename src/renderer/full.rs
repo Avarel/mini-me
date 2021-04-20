@@ -134,6 +134,13 @@ impl<'w, W> CrosstermRenderer<'w, W, NoStyle> {
             max_height: None
         }
     }
+
+    pub fn max_height(self, max_height: Option<usize>) -> Self {
+        Self {
+            max_height,
+            ..self
+        }
+    }
 }
 
 impl<'w, W, S> CrosstermRenderer<'w, W, S> {
