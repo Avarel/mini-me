@@ -70,15 +70,15 @@ fn main() -> Result<()> {
     let renderer = CrosstermRenderer::render_to(&mut lock)
         .max_height(Some(10))
         .margin(ClassicGutter)
-        .header(ClassicHeader(
-            "Enter on the last line or Esc to submit your input!",
-        ))
+        .header(ClassicHeader {
+            message: "Enter on the last line or Esc to submit your input!",
+        })
         .footer(ClassicFooter);
 
     // Print out some prompt using styling options.
     let term = Editor::with_renderer(renderer);
-    term.read(NormalKeybinding, renderer)?;
-    dbg!(term.contents());
+    let result = term.read(NormalKeybinding)?;
+    dbg!(result);
     Ok(())
 }
 ```
